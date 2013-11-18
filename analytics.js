@@ -4207,14 +4207,14 @@ require.register("yields-prevent/index.js", function(exports, require, module){
 
 /**
  * prevent default on the given `e`.
- * 
+ *
  * examples:
- * 
+ *
  *      anchor.onclick = prevent;
  *      anchor.onclick = function(e){
  *        if (something) return prevent(e);
  *      };
- * 
+ *
  * @param {Event} e
  */
 
@@ -5958,7 +5958,7 @@ require.alias("visionmedia-debug/index.js", "debug/index.js");
 require.alias("analytics/lib/index.js", "analytics/index.js");if (typeof exports == "object") {
   module.exports = require("analytics");
 } else if (typeof define == "function" && define.amd) {
-  define(function(){ return require("analytics"); });
+  define('analytics', function(){ return require("analytics"); });
 } else {
   this["analytics"] = require("analytics");
 }})();
