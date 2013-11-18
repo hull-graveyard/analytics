@@ -1,12 +1,5 @@
 ;(function(){
 
-
-/**
- * hasOwnProperty.
- */
-
-var has = Object.prototype.hasOwnProperty;
-
 /**
  * Require the given path.
  *
@@ -71,7 +64,6 @@ require.aliases = {};
 
 require.resolve = function(path) {
   if (path.charAt(0) === '/') path = path.slice(1);
-  var index = path + '/index.js';
 
   var paths = [
     path,
@@ -83,11 +75,8 @@ require.resolve = function(path) {
 
   for (var i = 0; i < paths.length; i++) {
     var path = paths[i];
-    if (has.call(require.modules, path)) return path;
-  }
-
-  if (has.call(require.aliases, index)) {
-    return require.aliases[index];
+    if (require.modules.hasOwnProperty(path)) return path;
+    if (require.aliases.hasOwnProperty(path)) return require.aliases[path];
   }
 };
 
@@ -140,7 +129,7 @@ require.register = function(path, definition) {
  */
 
 require.alias = function(from, to) {
-  if (!has.call(require.modules, from)) {
+  if (!require.modules.hasOwnProperty(from)) {
     throw new Error('Failed to alias "' + from + '", it does not exist');
   }
   require.aliases[to] = from;
@@ -202,11 +191,75 @@ require.relative = function(parent) {
    */
 
   localRequire.exists = function(path) {
-    return has.call(require.modules, localRequire.resolve(path));
+    return require.modules.hasOwnProperty(localRequire.resolve(path));
   };
 
   return localRequire;
 };
+require.register("avetisk-defaults/index.js", function(exports, require, module){
+'use strict';
+
+/**
+ * Merge default values.
+ *
+ * @param {Object} dest
+ * @param {Object} defaults
+ * @return {Object}
+ * @api public
+ */
+var defaults = function (dest, src, recursive) {
+  for (var prop in src) {
+    if (recursive && dest[prop] instanceof Object && src[prop] instanceof Object) {
+      dest[prop] = defaults(dest[prop], src[prop], true);
+    } else if (! (prop in dest)) {
+      dest[prop] = src[prop];
+    }
+  }
+
+  return dest;
+};
+
+/**
+ * Expose `defaults`.
+ */
+module.exports = defaults;
+
+});
+require.register("component-type/index.js", function(exports, require, module){
+
+/**
+ * toString ref.
+ */
+
+var toString = Object.prototype.toString;
+
+/**
+ * Return the type of `val`.
+ *
+ * @param {Mixed} val
+ * @return {String}
+ * @api public
+ */
+
+module.exports = function(val){
+  switch (toString.call(val)) {
+    case '[object Function]': return 'function';
+    case '[object Date]': return 'date';
+    case '[object RegExp]': return 'regexp';
+    case '[object Arguments]': return 'arguments';
+    case '[object Array]': return 'array';
+    case '[object String]': return 'string';
+  }
+
+  if (val === null) return 'null';
+  if (val === undefined) return 'undefined';
+  if (val && val.nodeType === 1) return 'element';
+  if (val === Object(val)) return 'object';
+
+  return typeof val;
+};
+
+});
 require.register("component-clone/index.js", function(exports, require, module){
 
 /**
@@ -325,7 +378,7 @@ function set(name, value, options) {
 
   if (options.path) str += '; path=' + options.path;
   if (options.domain) str += '; domain=' + options.domain;
-  if (options.expires) str += '; expires=' + options.expires.toUTCString();
+  if (options.expires) str += '; expires=' + options.expires.toGMTString();
   if (options.secure) str += '; secure';
 
   document.cookie = str;
@@ -453,6 +506,182 @@ function array(obj, fn) {
   }
 }
 });
+require.register("component-indexof/index.js", function(exports, require, module){
+module.exports = function(arr, obj){
+  if (arr.indexOf) return arr.indexOf(obj);
+  for (var i = 0; i < arr.length; ++i) {
+    if (arr[i] === obj) return i;
+  }
+  return -1;
+};
+});
+require.register("component-emitter/index.js", function(exports, require, module){
+
+/**
+ * Module dependencies.
+ */
+
+var index = require('indexof');
+
+/**
+ * Expose `Emitter`.
+ */
+
+module.exports = Emitter;
+
+/**
+ * Initialize a new `Emitter`.
+ *
+ * @api public
+ */
+
+function Emitter(obj) {
+  if (obj) return mixin(obj);
+};
+
+/**
+ * Mixin the emitter properties.
+ *
+ * @param {Object} obj
+ * @return {Object}
+ * @api private
+ */
+
+function mixin(obj) {
+  for (var key in Emitter.prototype) {
+    obj[key] = Emitter.prototype[key];
+  }
+  return obj;
+}
+
+/**
+ * Listen on the given `event` with `fn`.
+ *
+ * @param {String} event
+ * @param {Function} fn
+ * @return {Emitter}
+ * @api public
+ */
+
+Emitter.prototype.on =
+Emitter.prototype.addEventListener = function(event, fn){
+  this._callbacks = this._callbacks || {};
+  (this._callbacks[event] = this._callbacks[event] || [])
+    .push(fn);
+  return this;
+};
+
+/**
+ * Adds an `event` listener that will be invoked a single
+ * time then automatically removed.
+ *
+ * @param {String} event
+ * @param {Function} fn
+ * @return {Emitter}
+ * @api public
+ */
+
+Emitter.prototype.once = function(event, fn){
+  var self = this;
+  this._callbacks = this._callbacks || {};
+
+  function on() {
+    self.off(event, on);
+    fn.apply(this, arguments);
+  }
+
+  fn._off = on;
+  this.on(event, on);
+  return this;
+};
+
+/**
+ * Remove the given callback for `event` or all
+ * registered callbacks.
+ *
+ * @param {String} event
+ * @param {Function} fn
+ * @return {Emitter}
+ * @api public
+ */
+
+Emitter.prototype.off =
+Emitter.prototype.removeListener =
+Emitter.prototype.removeAllListeners =
+Emitter.prototype.removeEventListener = function(event, fn){
+  this._callbacks = this._callbacks || {};
+
+  // all
+  if (0 == arguments.length) {
+    this._callbacks = {};
+    return this;
+  }
+
+  // specific event
+  var callbacks = this._callbacks[event];
+  if (!callbacks) return this;
+
+  // remove all handlers
+  if (1 == arguments.length) {
+    delete this._callbacks[event];
+    return this;
+  }
+
+  // remove specific handler
+  var i = index(callbacks, fn._off || fn);
+  if (~i) callbacks.splice(i, 1);
+  return this;
+};
+
+/**
+ * Emit `event` with the given args.
+ *
+ * @param {String} event
+ * @param {Mixed} ...
+ * @return {Emitter}
+ */
+
+Emitter.prototype.emit = function(event){
+  this._callbacks = this._callbacks || {};
+  var args = [].slice.call(arguments, 1)
+    , callbacks = this._callbacks[event];
+
+  if (callbacks) {
+    callbacks = callbacks.slice(0);
+    for (var i = 0, len = callbacks.length; i < len; ++i) {
+      callbacks[i].apply(this, args);
+    }
+  }
+
+  return this;
+};
+
+/**
+ * Return array of callbacks for `event`.
+ *
+ * @param {String} event
+ * @return {Array}
+ * @api public
+ */
+
+Emitter.prototype.listeners = function(event){
+  this._callbacks = this._callbacks || {};
+  return this._callbacks[event] || [];
+};
+
+/**
+ * Check if this emitter has `event` handlers.
+ *
+ * @param {String} event
+ * @return {Boolean}
+ * @api public
+ */
+
+Emitter.prototype.hasListeners = function(event){
+  return !! this.listeners(event).length;
+};
+
+});
 require.register("component-event/index.js", function(exports, require, module){
 
 /**
@@ -468,7 +697,7 @@ require.register("component-event/index.js", function(exports, require, module){
 
 exports.bind = function(el, type, fn, capture){
   if (el.addEventListener) {
-    el.addEventListener(type, fn, capture);
+    el.addEventListener(type, fn, capture || false);
   } else {
     el.attachEvent('on' + type, fn);
   }
@@ -488,7 +717,7 @@ exports.bind = function(el, type, fn, capture){
 
 exports.unbind = function(el, type, fn, capture){
   if (el.removeEventListener) {
-    el.removeEventListener(type, fn, capture);
+    el.removeEventListener(type, fn, capture || false);
   } else {
     el.detachEvent('on' + type, fn);
   }
@@ -496,12 +725,2711 @@ exports.unbind = function(el, type, fn, capture){
 };
 
 });
-require.register("component-json/index.js", function(exports, require, module){
+require.register("component-object/index.js", function(exports, require, module){
 
-module.exports = 'undefined' == typeof JSON
-  ? require('json-fallback')
-  : JSON;
+/**
+ * HOP ref.
+ */
 
+var has = Object.prototype.hasOwnProperty;
+
+/**
+ * Return own keys in `obj`.
+ *
+ * @param {Object} obj
+ * @return {Array}
+ * @api public
+ */
+
+exports.keys = Object.keys || function(obj){
+  var keys = [];
+  for (var key in obj) {
+    if (has.call(obj, key)) {
+      keys.push(key);
+    }
+  }
+  return keys;
+};
+
+/**
+ * Return own values in `obj`.
+ *
+ * @param {Object} obj
+ * @return {Array}
+ * @api public
+ */
+
+exports.values = function(obj){
+  var vals = [];
+  for (var key in obj) {
+    if (has.call(obj, key)) {
+      vals.push(obj[key]);
+    }
+  }
+  return vals;
+};
+
+/**
+ * Merge `b` into `a`.
+ *
+ * @param {Object} a
+ * @param {Object} b
+ * @return {Object} a
+ * @api public
+ */
+
+exports.merge = function(a, b){
+  for (var key in b) {
+    if (has.call(b, key)) {
+      a[key] = b[key];
+    }
+  }
+  return a;
+};
+
+/**
+ * Return length of `obj`.
+ *
+ * @param {Object} obj
+ * @return {Number}
+ * @api public
+ */
+
+exports.length = function(obj){
+  return exports.keys(obj).length;
+};
+
+/**
+ * Check if `obj` is empty.
+ *
+ * @param {Object} obj
+ * @return {Boolean}
+ * @api public
+ */
+
+exports.isEmpty = function(obj){
+  return 0 == exports.length(obj);
+};
+});
+require.register("component-trim/index.js", function(exports, require, module){
+
+exports = module.exports = trim;
+
+function trim(str){
+  if (str.trim) return str.trim();
+  return str.replace(/^\s*|\s*$/g, '');
+}
+
+exports.left = function(str){
+  if (str.trimLeft) return str.trimLeft();
+  return str.replace(/^\s*/, '');
+};
+
+exports.right = function(str){
+  if (str.trimRight) return str.trimRight();
+  return str.replace(/\s*$/, '');
+};
+
+});
+require.register("component-querystring/index.js", function(exports, require, module){
+
+/**
+ * Module dependencies.
+ */
+
+var trim = require('trim');
+
+/**
+ * Parse the given query `str`.
+ *
+ * @param {String} str
+ * @return {Object}
+ * @api public
+ */
+
+exports.parse = function(str){
+  if ('string' != typeof str) return {};
+
+  str = trim(str);
+  if ('' == str) return {};
+
+  var obj = {};
+  var pairs = str.split('&');
+  for (var i = 0; i < pairs.length; i++) {
+    var parts = pairs[i].split('=');
+    obj[parts[0]] = null == parts[1]
+      ? ''
+      : decodeURIComponent(parts[1]);
+  }
+
+  return obj;
+};
+
+/**
+ * Stringify the given `obj`.
+ *
+ * @param {Object} obj
+ * @return {String}
+ * @api public
+ */
+
+exports.stringify = function(obj){
+  if (!obj) return '';
+  var pairs = [];
+  for (var key in obj) {
+    pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(obj[key]));
+  }
+  return pairs.join('&');
+};
+
+});
+require.register("component-url/index.js", function(exports, require, module){
+
+/**
+ * Parse the given `url`.
+ *
+ * @param {String} str
+ * @return {Object}
+ * @api public
+ */
+
+exports.parse = function(url){
+  var a = document.createElement('a');
+  a.href = url;
+  return {
+    href: a.href,
+    host: a.host,
+    port: a.port,
+    hash: a.hash,
+    hostname: a.hostname,
+    pathname: a.pathname,
+    protocol: a.protocol,
+    search: a.search,
+    query: a.search.slice(1)
+  }
+};
+
+/**
+ * Check if `url` is absolute.
+ *
+ * @param {String} url
+ * @return {Boolean}
+ * @api public
+ */
+
+exports.isAbsolute = function(url){
+  if (0 == url.indexOf('//')) return true;
+  if (~url.indexOf('://')) return true;
+  return false;
+};
+
+/**
+ * Check if `url` is relative.
+ *
+ * @param {String} url
+ * @return {Boolean}
+ * @api public
+ */
+
+exports.isRelative = function(url){
+  return ! exports.isAbsolute(url);
+};
+
+/**
+ * Check if `url` is cross domain.
+ *
+ * @param {String} url
+ * @return {Boolean}
+ * @api public
+ */
+
+exports.isCrossDomain = function(url){
+  url = exports.parse(url);
+  return url.hostname != location.hostname
+    || url.port != location.port
+    || url.protocol != location.protocol;
+};
+});
+require.register("component-bind/index.js", function(exports, require, module){
+
+/**
+ * Slice reference.
+ */
+
+var slice = [].slice;
+
+/**
+ * Bind `obj` to `fn`.
+ *
+ * @param {Object} obj
+ * @param {Function|String} fn or string
+ * @return {Function}
+ * @api public
+ */
+
+module.exports = function(obj, fn){
+  if ('string' == typeof fn) fn = obj[fn];
+  if ('function' != typeof fn) throw new Error('bind() requires a function');
+  var args = [].slice.call(arguments, 2);
+  return function(){
+    return fn.apply(obj, args.concat(slice.call(arguments)));
+  }
+};
+
+});
+require.register("segmentio-bind-all/index.js", function(exports, require, module){
+
+try {
+  var bind = require('bind');
+  var type = require('type');
+} catch (e) {
+  var bind = require('bind-component');
+  var type = require('type-component');
+}
+
+module.exports = function (obj) {
+  for (var key in obj) {
+    var val = obj[key];
+    if (type(val) === 'function') obj[key] = bind(obj, obj[key]);
+  }
+  return obj;
+};
+});
+require.register("ianstormtaylor-bind/index.js", function(exports, require, module){
+
+var bind = require('bind')
+  , bindAll = require('bind-all');
+
+
+/**
+ * Expose `bind`.
+ */
+
+module.exports = exports = bind;
+
+
+/**
+ * Expose `bindAll`.
+ */
+
+exports.all = bindAll;
+
+
+/**
+ * Expose `bindMethods`.
+ */
+
+exports.methods = bindMethods;
+
+
+/**
+ * Bind `methods` on `obj` to always be called with the `obj` as context.
+ *
+ * @param {Object} obj
+ * @param {String} methods...
+ */
+
+function bindMethods (obj, methods) {
+  methods = [].slice.call(arguments, 1);
+  for (var i = 0, method; method = methods[i]; i++) {
+    obj[method] = bind(obj, obj[method]);
+  }
+  return obj;
+}
+});
+require.register("timoxley-next-tick/index.js", function(exports, require, module){
+"use strict"
+
+if (typeof setImmediate == 'function') {
+  module.exports = function(f){ setImmediate(f) }
+}
+// legacy node.js
+else if (typeof process != 'undefined' && typeof process.nextTick == 'function') {
+  module.exports = process.nextTick
+}
+// fallback for other environments / postMessage behaves badly on IE8
+else if (typeof window == 'undefined' || window.ActiveXObject || !window.postMessage) {
+  module.exports = function(f){ setTimeout(f) };
+} else {
+  var q = [];
+
+  window.addEventListener('message', function(){
+    var i = 0;
+    while (i < q.length) {
+      try { q[i++](); }
+      catch (e) {
+        q = q.slice(i);
+        window.postMessage('tic!', '*');
+        throw e;
+      }
+    }
+    q.length = 0;
+  }, true);
+
+  module.exports = function(fn){
+    if (!q.length) window.postMessage('tic!', '*');
+    q.push(fn);
+  }
+}
+
+});
+require.register("ianstormtaylor-callback/index.js", function(exports, require, module){
+var next = require('next-tick');
+
+
+/**
+ * Expose `callback`.
+ */
+
+module.exports = callback;
+
+
+/**
+ * Call an `fn` back synchronously if it exists.
+ *
+ * @param {Function} fn
+ */
+
+function callback (fn) {
+  if ('function' === typeof fn) fn();
+}
+
+
+/**
+ * Call an `fn` back asynchronously if it exists. If `wait` is ommitted, the
+ * `fn` will be called on next tick.
+ *
+ * @param {Function} fn
+ * @param {Number} wait (optional)
+ */
+
+callback.async = function (fn, wait) {
+  if ('function' !== typeof fn) return;
+  if (!wait) return next(fn);
+  setTimeout(fn, wait);
+};
+
+
+/**
+ * Symmetry.
+ */
+
+callback.sync = callback;
+
+});
+require.register("ianstormtaylor-is-empty/index.js", function(exports, require, module){
+
+/**
+ * Expose `isEmpty`.
+ */
+
+module.exports = isEmpty;
+
+
+/**
+ * Has.
+ */
+
+var has = Object.prototype.hasOwnProperty;
+
+
+/**
+ * Test whether a value is "empty".
+ *
+ * @param {Mixed} val
+ * @return {Boolean}
+ */
+
+function isEmpty (val) {
+  if (null == val) return true;
+  if ('number' == typeof val) return 0 === val;
+  if (undefined !== val.length) return 0 === val.length;
+  for (var key in val) if (has.call(val, key)) return false;
+  return true;
+}
+});
+require.register("ianstormtaylor-is/index.js", function(exports, require, module){
+
+var isEmpty = require('is-empty')
+  , typeOf = require('type');
+
+
+/**
+ * Types.
+ */
+
+var types = [
+  'arguments',
+  'array',
+  'boolean',
+  'date',
+  'element',
+  'function',
+  'null',
+  'number',
+  'object',
+  'regexp',
+  'string',
+  'undefined'
+];
+
+
+/**
+ * Expose type checkers.
+ *
+ * @param {Mixed} value
+ * @return {Boolean}
+ */
+
+for (var i = 0, type; type = types[i]; i++) exports[type] = generate(type);
+
+
+/**
+ * Add alias for `function` for old browsers.
+ */
+
+exports.fn = exports['function'];
+
+
+/**
+ * Expose `empty` check.
+ */
+
+exports.empty = isEmpty;
+
+
+/**
+ * Expose `nan` check.
+ */
+
+exports.nan = function (val) {
+  return exports.number(val) && val != val;
+};
+
+
+/**
+ * Generate a type checker.
+ *
+ * @param {String} type
+ * @return {Function}
+ */
+
+function generate (type) {
+  return function (value) {
+    return type === typeOf(value);
+  };
+}
+});
+require.register("segmentio-after/index.js", function(exports, require, module){
+
+module.exports = function after (times, func) {
+  // After 0, really?
+  if (times <= 0) return func();
+
+  // That's more like it.
+  return function() {
+    if (--times < 1) {
+      return func.apply(this, arguments);
+    }
+  };
+};
+});
+require.register("yields-slug/index.js", function(exports, require, module){
+
+/**
+ * Generate a slug from the given `str`.
+ *
+ * example:
+ *
+ *        generate('foo bar');
+ *        // > foo-bar
+ *
+ * @param {String} str
+ * @param {Object} options
+ * @config {String|RegExp} [replace] characters to replace, defaulted to `/[^a-z0-9]/g`
+ * @config {String} [separator] separator to insert, defaulted to `-`
+ * @return {String}
+ */
+
+module.exports = function (str, options) {
+  options || (options = {});
+  return str.toLowerCase()
+    .replace(options.replace || /[^a-z0-9]/g, ' ')
+    .replace(/^ +| +$/g, '')
+    .replace(/ +/g, options.separator || '-')
+};
+
+});
+require.register("segmentio-analytics.js-integration/lib/index.js", function(exports, require, module){
+
+var bind = require('bind');
+var callback = require('callback');
+var clone = require('clone');
+var debug = require('debug');
+var defaults = require('defaults');
+var protos = require('./protos');
+var slug = require('slug');
+var statics = require('./statics');
+
+
+/**
+ * Expose `createIntegration`.
+ */
+
+module.exports = createIntegration;
+
+
+/**
+ * Create a new Integration constructor.
+ *
+ * @param {String} name
+ */
+
+function createIntegration (name) {
+
+  /**
+   * Initialize a new `Integration`.
+   *
+   * @param {Object} options
+   */
+
+  function Integration (options) {
+    this.debug = debug('analytics:integration:' + slug(name));
+    this.options = defaults(clone(options) || {}, this.defaults);
+    this._queue = [];
+    this.once('ready', bind(this, this.flush));
+
+    Integration.emit('construct', this);
+    this._wrapInitialize();
+    this._wrapLoad();
+    this._wrapPage();
+  }
+
+  Integration.prototype.defaults = {};
+  Integration.prototype.globals = [];
+  Integration.prototype.name = name;
+  for (var key in statics) Integration[key] = statics[key];
+  for (var key in protos) Integration.prototype[key] = protos[key];
+  return Integration;
+}
+});
+require.register("segmentio-analytics.js-integration/lib/protos.js", function(exports, require, module){
+
+var after = require('after');
+var callback = require('callback');
+var Emitter = require('emitter');
+var tick = require('next-tick');
+
+
+/**
+ * Mixin emitter.
+ */
+
+Emitter(exports);
+
+
+/**
+ * Initialize.
+ */
+
+exports.initialize = function () {
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ * @api private
+ */
+
+exports.loaded = function () {
+  return false;
+};
+
+
+/**
+ * Load.
+ *
+ * @param {Function} cb
+ */
+
+exports.load = function (cb) {
+  callback.async(cb);
+};
+
+
+/**
+ * Page.
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+exports.page = function (category, name, properties, options) {};
+
+
+/**
+ * Invoke a `method` that may or may not exist on the prototype with `args`,
+ * queueing or not depending on whether the integration is "ready". Don't
+ * trust the method call, since it contains integration party code.
+ *
+ * @param {String} method
+ * @param {Mixed} args...
+ * @api private
+ */
+
+exports.invoke = function (method) {
+  if (!this[method]) return;
+  var args = [].slice.call(arguments, 1);
+  if (!this._ready) return this.queue(method, args);
+
+  try {
+    this.debug('%s with %o', method, args);
+    this[method].apply(this, args);
+  } catch (e) {
+    this.debug('error %o calling %s with %o', e, method, args);
+  }
+};
+
+
+/**
+ * Queue a `method` with `args`. If the integration assumes an initial
+ * pageview, then let the first call to `page` pass through.
+ *
+ * @param {String} method
+ * @param {Array} args
+ * @api private
+ */
+
+exports.queue = function (method, args) {
+  if ('page' == method && this._assumesPageview && !this._initialized) {
+    return this.page.apply(this, args);
+  }
+
+  this._queue.push({ method: method, args: args });
+};
+
+
+/**
+ * Flush the internal queue.
+ *
+ * @api private
+ */
+
+exports.flush = function () {
+  this._ready = true;
+  var call;
+  while (call = this._queue.shift()) this[call.method].apply(this, call.args);
+};
+
+
+/**
+ * Reset the integration, removing its global variables.
+ *
+ * @api private
+ */
+
+exports.reset = function () {
+  for (var i = 0, key; key = this.globals[i]; i++) window[key] = undefined;
+};
+
+
+/**
+ * Wrap the initialize method in an exists check, so we don't have to do it for
+ * every single integration.
+ *
+ * @api private
+ */
+
+exports._wrapInitialize = function () {
+  var initialize = this.initialize;
+  this.initialize = function () {
+    this.debug('initialize');
+    this._initialized = true;
+    initialize.apply(this, arguments);
+    this.emit('initialize');
+
+    var self = this;
+    if (this._readyOnInitialize) {
+      tick(function () {
+        self.emit('ready');
+      });
+    }
+  };
+
+  if (this._assumesPageview) this.initialize = after(2, this.initialize);
+};
+
+
+/**
+ * Wrap the load method in `debug` calls, so every integration gets them
+ * automatically.
+ *
+ * @api private
+ */
+
+exports._wrapLoad = function () {
+  var load = this.load;
+  this.load = function (callback) {
+    var self = this;
+    this.debug('loading');
+
+    if (this.loaded()) {
+      this.debug('already loaded');
+      if (self._readyOnLoad) {
+        tick(function () {
+          self.emit('ready');
+          callback && callback();
+        });
+      }
+      return;
+    }
+
+    load.call(this, function (err, e) {
+      self.debug('loaded');
+      self.emit('load');
+      if (self._readyOnLoad) self.emit('ready');
+      callback && callback(err, e);
+    });
+  };
+};
+
+
+/**
+ * Wrap the page method to call `initialize` instead if the integration assumes
+ * a pageview.
+ *
+ * @api private
+ */
+
+exports._wrapPage = function () {
+  var page = this.page;
+  this.page = function () {
+    if (this._assumesPageview && !this._initialized) {
+      return this.initialize({
+        category: arguments[0],
+        name: arguments[1],
+        properties: arguments[2],
+        options: arguments[3]
+      });
+    }
+    page.apply(this, arguments);
+  };
+};
+});
+require.register("segmentio-analytics.js-integration/lib/statics.js", function(exports, require, module){
+
+var after = require('after');
+var Emitter = require('emitter');
+
+
+/**
+ * Mixin emitter.
+ */
+
+Emitter(exports);
+
+
+/**
+ * Add a new option to the integration by `key` with default `value`.
+ *
+ * @param {String} key
+ * @param {Mixed} value
+ * @return {Integration}
+ */
+
+exports.option = function (key, value) {
+  this.prototype.defaults[key] = value;
+  return this;
+};
+
+
+/**
+ * Register a new global variable `key` owned by the integration, which will be
+ * used to test whether the integration is already on the page.
+ *
+ * @param {String} global
+ * @return {Integration}
+ */
+
+exports.global = function (key) {
+  this.prototype.globals.push(key);
+  return this;
+};
+
+
+/**
+ * Mark the integration as assuming an initial pageview, so to defer loading
+ * the script until the first `page` call, noop the first `initialize`.
+ *
+ * @return {Integration}
+ */
+
+exports.assumesPageview = function () {
+  this.prototype._assumesPageview = true;
+  return this;
+};
+
+
+/**
+ * Mark the integration as being "ready" once `load` is called.
+ *
+ * @return {Integration}
+ */
+
+exports.readyOnLoad = function () {
+  this.prototype._readyOnLoad = true;
+  return this;
+};
+
+
+/**
+ * Mark the integration as being "ready" once `load` is called.
+ *
+ * @return {Integration}
+ */
+
+exports.readyOnInitialize = function () {
+  this.prototype._readyOnInitialize = true;
+  return this;
+};
+});
+require.register("component-domify/index.js", function(exports, require, module){
+
+/**
+ * Expose `parse`.
+ */
+
+module.exports = parse;
+
+/**
+ * Wrap map from jquery.
+ */
+
+var map = {
+  option: [1, '<select multiple="multiple">', '</select>'],
+  optgroup: [1, '<select multiple="multiple">', '</select>'],
+  legend: [1, '<fieldset>', '</fieldset>'],
+  thead: [1, '<table>', '</table>'],
+  tbody: [1, '<table>', '</table>'],
+  tfoot: [1, '<table>', '</table>'],
+  colgroup: [1, '<table>', '</table>'],
+  caption: [1, '<table>', '</table>'],
+  tr: [2, '<table><tbody>', '</tbody></table>'],
+  td: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
+  th: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
+  col: [2, '<table><tbody></tbody><colgroup>', '</colgroup></table>'],
+  _default: [0, '', '']
+};
+
+/**
+ * Parse `html` and return the children.
+ *
+ * @param {String} html
+ * @return {Array}
+ * @api private
+ */
+
+function parse(html) {
+  if ('string' != typeof html) throw new TypeError('String expected');
+
+  html = html.replace(/^\s+|\s+$/g, ''); // Remove leading/trailing whitespace
+
+  // tag name
+  var m = /<([\w:]+)/.exec(html);
+  if (!m) throw new Error('No elements were generated.');
+  var tag = m[1];
+
+  // body support
+  if (tag == 'body') {
+    var el = document.createElement('html');
+    el.innerHTML = html;
+    return el.removeChild(el.lastChild);
+  }
+
+  // wrap map
+  var wrap = map[tag] || map._default;
+  var depth = wrap[0];
+  var prefix = wrap[1];
+  var suffix = wrap[2];
+  var el = document.createElement('div');
+  el.innerHTML = prefix + html + suffix;
+  while (depth--) el = el.lastChild;
+
+  var els = el.children;
+  if (1 == els.length) {
+    return el.removeChild(els[0]);
+  }
+
+  var fragment = document.createDocumentFragment();
+  while (els.length) {
+    fragment.appendChild(el.removeChild(els[0]));
+  }
+
+  return fragment;
+}
+
+});
+require.register("component-once/index.js", function(exports, require, module){
+
+/**
+ * Identifier.
+ */
+
+var n = 0;
+
+/**
+ * Global.
+ */
+
+var global = (function(){ return this })();
+
+/**
+ * Make `fn` callable only once.
+ *
+ * @param {Function} fn
+ * @return {Function}
+ * @api public
+ */
+
+module.exports = function(fn) {
+  var id = n++;
+
+  function once(){
+    // no receiver
+    if (this == global) {
+      if (once.called) return;
+      once.called = true;
+      return fn.apply(this, arguments);
+    }
+
+    // receiver
+    var key = '__called_' + id + '__';
+    if (this[key]) return;
+    this[key] = true;
+    return fn.apply(this, arguments);
+  }
+
+  return once;
+};
+
+});
+require.register("segmentio-alias/index.js", function(exports, require, module){
+
+var type = require('type');
+
+try {
+  var clone = require('clone');
+} catch (e) {
+  var clone = require('clone-component');
+}
+
+
+/**
+ * Expose `alias`.
+ */
+
+module.exports = alias;
+
+
+/**
+ * Alias an `object`.
+ *
+ * @param {Object} obj
+ * @param {Mixed} method
+ */
+
+function alias (obj, method) {
+  switch (type(method)) {
+    case 'object': return aliasByDictionary(clone(obj), method);
+    case 'function': return aliasByFunction(clone(obj), method);
+  }
+}
+
+
+/**
+ * Convert the keys in an `obj` using a dictionary of `aliases`.
+ *
+ * @param {Object} obj
+ * @param {Object} aliases
+ */
+
+function aliasByDictionary (obj, aliases) {
+  for (var key in aliases) {
+    if (undefined === obj[key]) continue;
+    obj[aliases[key]] = obj[key];
+    delete obj[key];
+  }
+  return obj;
+}
+
+
+/**
+ * Convert the keys in an `obj` using a `convert` function.
+ *
+ * @param {Object} obj
+ * @param {Function} convert
+ */
+
+function aliasByFunction (obj, convert) {
+  for (var key in obj) {
+    obj[convert(key)] = obj[key];
+    delete obj[key];
+  }
+  return obj;
+}
+});
+require.register("segmentio-convert-dates/index.js", function(exports, require, module){
+
+var is = require('is');
+
+try {
+  var clone = require('clone');
+} catch (e) {
+  var clone = require('clone-component');
+}
+
+
+/**
+ * Expose `convertDates`.
+ */
+
+module.exports = convertDates;
+
+
+/**
+ * Recursively convert an `obj`'s dates to new values.
+ *
+ * @param {Object} obj
+ * @param {Function} convert
+ * @return {Object}
+ */
+
+function convertDates (obj, convert) {
+  obj = clone(obj);
+  for (var key in obj) {
+    var val = obj[key];
+    if (is.date(val)) obj[key] = convert(val);
+    if (is.object(val)) obj[key] = convertDates(val, convert);
+  }
+  return obj;
+}
+});
+require.register("segmentio-global-queue/index.js", function(exports, require, module){
+
+/**
+ * Expose `generate`.
+ */
+
+module.exports = generate;
+
+
+/**
+ * Generate a global queue pushing method with `name`.
+ *
+ * @param {String} name
+ * @param {Object} options
+ *   @property {Boolean} wrap
+ * @return {Function}
+ */
+
+function generate (name, options) {
+  options = options || {};
+
+  return function (args) {
+    args = [].slice.call(arguments);
+    window[name] || (window[name] = []);
+    options.wrap === false
+      ? window[name].push.apply(window[name], args)
+      : window[name].push(args);
+  };
+}
+});
+require.register("segmentio-load-date/index.js", function(exports, require, module){
+
+
+/*
+ * Load date.
+ *
+ * For reference: http://www.html5rocks.com/en/tutorials/webperformance/basics/
+ */
+
+var time = new Date()
+  , perf = window.performance;
+
+if (perf && perf.timing && perf.timing.responseEnd) {
+  time = new Date(perf.timing.responseEnd);
+}
+
+module.exports = time;
+});
+require.register("segmentio-load-script/index.js", function(exports, require, module){
+var type = require('type');
+
+
+module.exports = function loadScript (options, callback) {
+    if (!options) throw new Error('Cant load nothing...');
+
+    // Allow for the simplest case, just passing a `src` string.
+    if (type(options) === 'string') options = { src : options };
+
+    var https = document.location.protocol === 'https:' ||
+                document.location.protocol === 'chrome-extension:';
+
+    // If you use protocol relative URLs, third-party scripts like Google
+    // Analytics break when testing with `file:` so this fixes that.
+    if (options.src && options.src.indexOf('//') === 0) {
+        options.src = https ? 'https:' + options.src : 'http:' + options.src;
+    }
+
+    // Allow them to pass in different URLs depending on the protocol.
+    if (https && options.https) options.src = options.https;
+    else if (!https && options.http) options.src = options.http;
+
+    // Make the `<script>` element and insert it before the first script on the
+    // page, which is guaranteed to exist since this Javascript is running.
+    var script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.async = true;
+    script.src = options.src;
+
+    var firstScript = document.getElementsByTagName('script')[0];
+    firstScript.parentNode.insertBefore(script, firstScript);
+
+    // If we have a callback, attach event handlers, even in IE. Based off of
+    // the Third-Party Javascript script loading example:
+    // https://github.com/thirdpartyjs/thirdpartyjs-code/blob/master/examples/templates/02/loading-files/index.html
+    if (callback && type(callback) === 'function') {
+        if (script.addEventListener) {
+            script.addEventListener('load', function (event) {
+                callback(null, event);
+            }, false);
+            script.addEventListener('error', function (event) {
+                callback(new Error('Failed to load the script.'), event);
+            }, false);
+        } else if (script.attachEvent) {
+            script.attachEvent('onreadystatechange', function (event) {
+                if (/complete|loaded/.test(script.readyState)) {
+                    callback(null, event);
+                }
+            });
+        }
+    }
+
+    // Return the script element in case they want to do anything special, like
+    // give it an ID or attributes.
+    return script;
+};
+
+});
+require.register("segmentio-on-body/index.js", function(exports, require, module){
+var each = require('each');
+
+
+/**
+ * Cache whether `<body>` exists.
+ */
+
+var body = false;
+
+
+/**
+ * Callbacks to call when the body exists.
+ */
+
+var callbacks = [];
+
+
+/**
+ * Export a way to add handlers to be invoked once the body exists.
+ *
+ * @param {Function} callback  A function to call when the body exists.
+ */
+
+module.exports = function onBody (callback) {
+  if (body) {
+    call(callback);
+  } else {
+    callbacks.push(callback);
+  }
+};
+
+
+/**
+ * Set an interval to check for `document.body`.
+ */
+
+var interval = setInterval(function () {
+  if (!document.body) return;
+  body = true;
+  each(callbacks, call);
+  clearInterval(interval);
+}, 5);
+
+
+/**
+ * Call a callback, passing it the body.
+ *
+ * @param {Function} callback  The callback to call.
+ */
+
+function call (callback) {
+  callback(document.body);
+}
+});
+require.register("segmentio-on-error/index.js", function(exports, require, module){
+
+/**
+ * Expose `onError`.
+ */
+
+module.exports = onError;
+
+
+/**
+ * Callbacks.
+ */
+
+var callbacks = [];
+
+
+/**
+ * Preserve existing handler.
+ */
+
+if ('function' == typeof window.onerror) callbacks.push(window.onerror);
+
+
+/**
+ * Bind to `window.onerror`.
+ */
+
+window.onerror = handler;
+
+
+/**
+ * Error handler.
+ */
+
+function handler () {
+  for (var i = 0, fn; fn = callbacks[i]; i++) fn.apply(this, arguments);
+}
+
+
+/**
+ * Call a `fn` on `window.onerror`.
+ *
+ * @param {Function} fn
+ */
+
+function onError (fn) {
+  callbacks.push(fn);
+  if (window.onerror != handler) {
+    callbacks.push(window.onerror);
+    window.onerror = handler;
+  }
+}
+});
+require.register("segmentio-to-unix-timestamp/index.js", function(exports, require, module){
+
+/**
+ * Expose `toUnixTimestamp`.
+ */
+
+module.exports = toUnixTimestamp;
+
+
+/**
+ * Convert a `date` into a Unix timestamp.
+ *
+ * @param {Date}
+ * @return {Number}
+ */
+
+function toUnixTimestamp (date) {
+  return Math.floor(date.getTime() / 1000);
+}
+});
+require.register("segmentio-use-https/index.js", function(exports, require, module){
+
+/**
+ * Protocol.
+ */
+
+module.exports = function (url) {
+  switch (arguments.length) {
+    case 0: return check();
+    case 1: return transform(url);
+  }
+};
+
+
+/**
+ * Transform a protocol-relative `url` to the use the proper protocol.
+ *
+ * @param {String} url
+ * @return {String}
+ */
+
+function transform (url) {
+  return check() ? 'https:' + url : 'http:' + url;
+}
+
+
+/**
+ * Check whether `https:` be used for loading scripts.
+ *
+ * @return {Boolean}
+ */
+
+function check () {
+  return (
+    location.protocol == 'https:' ||
+    location.protocol == 'chrome-extension:'
+  );
+}
+});
+require.register("visionmedia-batch/index.js", function(exports, require, module){
+/**
+ * Module dependencies.
+ */
+
+try {
+  var EventEmitter = require('events').EventEmitter;
+} catch (err) {
+  var Emitter = require('emitter');
+}
+
+/**
+ * Noop.
+ */
+
+function noop(){}
+
+/**
+ * Expose `Batch`.
+ */
+
+module.exports = Batch;
+
+/**
+ * Create a new Batch.
+ */
+
+function Batch() {
+  if (!(this instanceof Batch)) return new Batch;
+  this.fns = [];
+  this.concurrency(Infinity);
+  this.throws(true);
+  for (var i = 0, len = arguments.length; i < len; ++i) {
+    this.push(arguments[i]);
+  }
+}
+
+/**
+ * Inherit from `EventEmitter.prototype`.
+ */
+
+if (EventEmitter) {
+  Batch.prototype.__proto__ = EventEmitter.prototype;
+} else {
+  Emitter(Batch.prototype);
+}
+
+/**
+ * Set concurrency to `n`.
+ *
+ * @param {Number} n
+ * @return {Batch}
+ * @api public
+ */
+
+Batch.prototype.concurrency = function(n){
+  this.n = n;
+  return this;
+};
+
+/**
+ * Queue a function.
+ *
+ * @param {Function} fn
+ * @return {Batch}
+ * @api public
+ */
+
+Batch.prototype.push = function(fn){
+  this.fns.push(fn);
+  return this;
+};
+
+/**
+ * Set wether Batch will or will not throw up.
+ *
+ * @param  {Boolean} throws
+ * @return {Batch}
+ * @api public
+ */
+Batch.prototype.throws = function(throws) {
+  this.e = !!throws;
+  return this;
+};
+
+/**
+ * Execute all queued functions in parallel,
+ * executing `cb(err, results)`.
+ *
+ * @param {Function} cb
+ * @return {Batch}
+ * @api public
+ */
+
+Batch.prototype.end = function(cb){
+  var self = this
+    , total = this.fns.length
+    , pending = total
+    , results = []
+    , errors = []
+    , cb = cb || noop
+    , fns = this.fns
+    , max = this.n
+    , throws = this.e
+    , index = 0
+    , done;
+
+  // empty
+  if (!fns.length) return cb(null, results);
+
+  // process
+  function next() {
+    var i = index++;
+    var fn = fns[i];
+    if (!fn) return;
+    var start = new Date;
+
+    try {
+      fn(callback);
+    } catch (err) {
+      callback(err);
+    }
+
+    function callback(err, res){
+      if (done) return;
+      if (err && throws) return done = true, cb(err);
+      var complete = total - pending + 1;
+      var end = new Date;
+
+      results[i] = res;
+      errors[i] = err;
+
+      self.emit('progress', {
+        index: i,
+        value: res,
+        error: err,
+        pending: pending,
+        total: total,
+        complete: complete,
+        percent: complete / total * 100 | 0,
+        start: start,
+        end: end,
+        duration: end - start
+      });
+
+      if (--pending) next()
+      else if(!throws) cb(errors, results);
+      else cb(null, results);
+    }
+  }
+
+  // concurrency
+  for (var i = 0; i < fns.length; i++) {
+    if (i == max) break;
+    next();
+  }
+
+  return this;
+};
+
+});
+require.register("segmentio-analytics.js-integrations/index.js", function(exports, require, module){
+
+var each = require('each');
+
+
+/**
+ * A list all of our integration slugs.
+ */
+
+var integrations = [
+  // 'adroll',
+  // 'amplitude',
+  // 'awesm',
+  // 'awesomatic',
+  // 'bugherd',
+  // 'bugsnag',
+  // 'chartbeat',
+  // 'clicktale',
+  // 'clicky',
+  // 'comscore',
+  // 'crazy-egg',
+  // 'customerio',
+  // 'drip',
+  // 'evergage',
+  // 'errorception',
+  // 'foxmetrics',
+  // 'gauges',
+  // 'get-satisfaction',
+  'google-analytics',
+  // 'gosquared',
+  // 'heap',
+  // 'hittail',
+  // 'hubspot',
+  // 'improvely',
+  // 'inspectlet',
+  'intercom',
+  'keen-io',
+  'kissmetrics',
+  // 'klaviyo',
+  // 'leadlander',
+  // 'livechat',
+  // 'lucky-orange',
+  // 'lytics',
+  'mixpanel',
+  // 'mousestats',
+  // 'olark',
+  // 'optimizely',
+  // 'perfect-audience',
+  // 'pingdom',
+  // 'preact',
+  // 'qualaroo',
+  // 'quantcast',
+  // 'rollbar',
+  // 'sentry',
+  // 'snapengage',
+  // 'spinnakr',
+  // 'tapstream',
+  // 'trakio',
+  // 'usercycle',
+  // 'userfox',
+  // 'uservoice',
+  // 'vero',
+  // 'visual-website-optimizer',
+  // 'woopra',
+  // 'yandex-metrica'
+];
+
+
+/**
+ * Expose the integrations, using their own `name` from their `prototype`.
+ */
+
+each(integrations, function (slug) {
+  var plugin = require('./lib/' + slug);
+  var name = plugin.Integration.prototype.name;
+  exports[name] = plugin;
+});
+
+});
+require.register("segmentio-analytics.js-integrations/lib/google-analytics.js", function(exports, require, module){
+
+var callback = require('callback');
+var canonical = require('canonical');
+var each = require('each');
+var integration = require('integration');
+var is = require('is');
+var load = require('load-script');
+var push = require('global-queue')('_gaq');
+var type = require('type');
+var url = require('url');
+
+
+/**
+ * Expose plugin.
+ */
+
+module.exports = exports = function (analytics) {
+  analytics.addIntegration(GA);
+};
+
+
+/**
+ * Expose `GA` integration.
+ *
+ * http://support.google.com/analytics/bin/answer.py?hl=en&answer=2558867
+ * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiBasicConfiguration#_gat.GA_Tracker_._setSiteSpeedSampleRate
+ */
+
+var GA = exports.Integration = integration('Google Analytics')
+  .readyOnLoad()
+  .global('ga')
+  .global('gaplugins')
+  .global('_gaq')
+  .global('GoogleAnalyticsObject')
+  .option('anonymizeIp', false)
+  .option('classic', false)
+  .option('domain', 'none')
+  .option('doubleClick', false)
+  .option('enhancedLinkAttribution', false)
+  .option('ignoreReferrer', null)
+  .option('siteSpeedSampleRate', null)
+  .option('trackingId', '')
+  .option('trackNamedPages', true)
+  .option('trackCategorizedPages', true);
+
+
+/**
+ * When in "classic" mode, on `construct` swap all of the method to point to
+ * their classic counterparts.
+ */
+
+GA.on('construct', function (integration) {
+  if (!integration.options.classic) return;
+  integration.initialize = integration.initializeClassic;
+  integration.load = integration.loadClassic;
+  integration.loaded = integration.loadedClassic;
+  integration.page = integration.pageClassic;
+  integration.track = integration.trackClassic;
+});
+
+
+/**
+ * Initialize.
+ *
+ * https://developers.google.com/analytics/devguides/collection/analyticsjs/advanced
+ */
+
+GA.prototype.initialize = function () {
+  var opts = this.options;
+
+  // setup the tracker globals
+  window.GoogleAnalyticsObject = 'ga';
+  window.ga = window.ga || function () {
+    window.ga.q = window.ga.q || [];
+    window.ga.q.push(arguments);
+  };
+  window.ga.l = new Date().getTime();
+
+  window.ga('create', opts.trackingId, {
+    cookieDomain: opts.domain || GA.prototype.defaults.domain, // to protect against empty string
+    siteSpeedSampleRate: opts.siteSpeedSampleRate,
+    allowLinker: true
+  });
+
+  // anonymize after initializing, otherwise a warning is shown
+  // in google analytics debugger
+  if (opts.anonymizeIp) window.ga('set', 'anonymizeIp', true);
+
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ */
+
+GA.prototype.loaded = function () {
+  return !! window.gaplugins;
+};
+
+
+/**
+ * Load the Google Analytics library.
+ *
+ * @param {Function} callback
+ */
+
+GA.prototype.load = function (callback) {
+  load('//www.google-analytics.com/analytics.js', callback);
+};
+
+
+/**
+ * Page.
+ *
+ * https://developers.google.com/analytics/devguides/collection/analyticsjs/pages
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+GA.prototype.page = function (category, name, properties, options) {
+  properties = properties || {};
+  this._category = category; // store for later
+  if (name && category) name = category + ' ' + name;
+
+  window.ga('send', 'pageview', {
+    page: properties.path,
+    title: name || properties.title,
+    url: properties.url
+  });
+
+  // categorized pages
+  if (category && this.options.trackCategorizedPages) {
+    this.track('Viewed ' + category + ' Page', properties, { noninteraction: true });
+  }
+
+  // named pages
+  if (name && this.options.trackNamedPages) {
+    this.track('Viewed ' + name + ' Page', properties, { noninteraction: true });
+  }
+};
+
+
+/**
+ * Track.
+ *
+ * https://developers.google.com/analytics/devguides/collection/analyticsjs/events
+ * https://developers.google.com/analytics/devguides/collection/analyticsjs/field-reference
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+GA.prototype.track = function (event, properties, options) {
+  properties = properties || {};
+  options = options || {};
+
+  window.ga('send', 'event', {
+    eventAction: event,
+    eventCategory: this._category || properties.category || 'All',
+    eventLabel: properties.label,
+    eventValue: formatValue(properties.value || properties.revenue),
+    nonInteraction: properties.noninteraction || options.noninteraction
+  });
+};
+
+
+/**
+ * Initialize (classic).
+ *
+ * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiBasicConfiguration
+ */
+
+GA.prototype.initializeClassic = function () {
+  var opts = this.options;
+  var anonymize = opts.anonymizeIp;
+  var db = opts.doubleClick;
+  var domain = opts.domain;
+  var enhanced = opts.enhancedLinkAttribution;
+  var ignore = opts.ignoreReferrer;
+  var sample = opts.siteSpeedSampleRate;
+
+  window._gaq = window._gaq || [];
+  push('_setAccount', opts.trackingId);
+  push('_setAllowLinker', true);
+
+  if (anonymize) push('_gat._anonymizeIp');
+  if (domain) push('_setDomainName', domain);
+  if (sample) push('_setSiteSpeedSampleRate', sample);
+
+  if (enhanced) {
+    var protocol = 'https:' === document.location.protocol ? 'https:' : 'http:';
+    var pluginUrl = protocol + '//www.google-analytics.com/plugins/ga/inpage_linkid.js';
+    push('_require', 'inpage_linkid', pluginUrl);
+  }
+
+  if (ignore) {
+    if (!is.array(ignore)) ignore = [ignore];
+    each(ignore, function (domain) {
+      push('_addIgnoredRef', domain);
+    });
+  }
+
+  this.load();
+};
+
+
+/**
+ * Loaded? (classic)
+ *
+ * @return {Boolean}
+ */
+
+GA.prototype.loadedClassic = function () {
+  return !! (window._gaq && window._gaq.push !== Array.prototype.push);
+};
+
+
+/**
+ * Load the classic Google Analytics library.
+ *
+ * @param {Function} callback
+ */
+
+GA.prototype.loadClassic = function (callback) {
+  if (this.options.doubleClick) {
+    load('//stats.g.doubleclick.net/dc.js', callback);
+  } else {
+    load({
+      http: 'http://www.google-analytics.com/ga.js',
+      https: 'https://ssl.google-analytics.com/ga.js'
+    }, callback);
+  }
+};
+
+
+/**
+ * Page (classic).
+ *
+ * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiBasicConfiguration
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+GA.prototype.pageClassic = function (category, name, properties, options) {
+  properties = properties || {};
+  options = options || {};
+  this._category = category; // store for later
+
+  push('_trackPageview', properties.path);
+
+  // categorized pages
+  if (category && this.options.trackCategorizedPages) {
+    this.track('Viewed ' + category + ' Page', properties, { noninteraction: true });
+  }
+
+  // named pages
+  if (name && this.options.trackNamedPages) {
+    if (name && category) name = category + ' ' + name;
+    this.track('Viewed ' + name + ' Page', properties, { noninteraction: true });
+  }
+};
+
+
+/**
+ * Track (classic).
+ *
+ * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiEventTracking
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+GA.prototype.trackClassic = function (event, properties, options) {
+  properties = properties || {};
+  options = options || {};
+
+  var category = this._category || properties.category || 'All';
+  var label = properties.label;
+  var value = formatValue(properties.revenue || properties.value);
+  var noninteraction = properties.noninteraction || options.noninteraction;
+
+  push('_trackEvent', category, event, label, value, noninteraction);
+};
+
+
+/**
+ * Format the value property to Google's liking.
+ *
+ * @param {Number} value
+ * @return {Number}
+ */
+
+function formatValue (value) {
+  if (!value || value < 0) return 0;
+  return Math.round(value);
+}
+});
+require.register("segmentio-analytics.js-integrations/lib/intercom.js", function(exports, require, module){
+
+var alias = require('alias');
+var convertDates = require('convert-dates');
+var integration = require('integration');
+var each = require('each');
+var is = require('is');
+var isEmail = require('is-email');
+var load = require('load-script');
+
+
+/**
+ * Expose plugin.
+ */
+
+module.exports = exports = function (analytics) {
+  analytics.addIntegration(Intercom);
+};
+
+
+/**
+ * Expose `Intercom` integration.
+ */
+
+var Intercom = exports.Integration = integration('Intercom')
+  .assumesPageview()
+  .readyOnLoad()
+  .global('Intercom')
+  .option('activator', '#IntercomDefaultWidget')
+  .option('appId', '')
+  .option('counter', true)
+  .option('inbox', false);
+
+
+/**
+ * Initialize.
+ *
+ * http://docs.intercom.io/
+ * http://docs.intercom.io/#IntercomJS
+ *
+ * @param {Object} page
+ */
+
+Intercom.prototype.initialize = function (page) {
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ */
+
+Intercom.prototype.loaded = function () {
+  return is.fn(window.Intercom);
+};
+
+
+/**
+ * Load the Intercom library.
+ *
+ * @param {Function} callback
+ */
+
+Intercom.prototype.load = function (callback) {
+  load('https://static.intercomcdn.com/intercom.v1.js', callback);
+};
+
+
+/**
+ * Identify.
+ *
+ * http://docs.intercom.io/#IntercomJS
+ *
+ * @param {String} id (optional)
+ * @param {Object} traits (optional)
+ * @param {Object} options (optional)
+ */
+
+Intercom.prototype.identify = function (id, traits, options) {
+  traits = traits || {};
+  options = options || {};
+
+  if (!id && !traits.email) return; // one is required
+
+  traits.app_id = this.options.appId;
+  if (id) traits.user_id = id;
+
+  // handle dates
+  traits = convertDates(traits, formatDate);
+  traits = alias(traits, { created: 'created_at'});
+  if (traits.company) {
+    traits.company = alias(traits.company, { created: 'created_at' });
+  }
+
+  // handle options
+  var Intercom = options.Intercom || options.intercom || {};
+  if (Intercom.increments) traits.increments = Intercom.increments;
+  if (Intercom.userHash) traits.user_hash = Intercom.userHash;
+  if (Intercom.user_hash) traits.user_hash = Intercom.user_hash;
+  if (this.options.inbox) {
+    traits.widget = {
+      activator: this.options.activator,
+      use_counter: this.options.counter
+    };
+  }
+
+  var method = this._id !== id ? 'boot': 'update';
+  this._id = id; // cache for next time
+
+  window.Intercom(method, traits);
+};
+
+
+/**
+ * Group.
+ *
+ * @param {String} id (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+Intercom.prototype.group = function (id, properties, options) {
+  properties = properties || {};
+  if (id) properties.id = id;
+  window.Intercom('update', { company: properties });
+};
+
+
+/**
+ * Format a date to Intercom's liking.
+ *
+ * @param {Date} date
+ * @return {Number}
+ */
+
+function formatDate (date) {
+  return Math.floor(date / 1000);
+}
+});
+require.register("segmentio-analytics.js-integrations/lib/keen-io.js", function(exports, require, module){
+
+var callback = require('callback');
+var integration = require('integration');
+var load = require('load-script');
+
+
+/**
+ * Expose plugin.
+ */
+
+module.exports = exports = function (analytics) {
+  analytics.addIntegration(Keen);
+};
+
+
+/**
+ * Expose `Keen IO` integration.
+ */
+
+var Keen = exports.Integration = integration('Keen IO')
+  .readyOnInitialize()
+  .global('Keen')
+  .option('projectId', '')
+  .option('readKey', '')
+  .option('writeKey', '')
+  .option('trackNamedPages', true)
+  .option('trackAllPages', false)
+  .option('trackCategorizedPages', true);
+
+
+/**
+ * Initialize.
+ *
+ * https://keen.io/docs/
+ */
+
+Keen.prototype.initialize = function () {
+  var options = this.options;
+  window.Keen = window.Keen||{configure:function(e){this._cf=e;},addEvent:function(e,t,n,i){this._eq=this._eq||[],this._eq.push([e,t,n,i]);},setGlobalProperties:function(e){this._gp=e;},onChartsReady:function(e){this._ocrq=this._ocrq||[],this._ocrq.push(e);}};
+  window.Keen.configure({
+    projectId: options.projectId,
+    writeKey: options.writeKey,
+    readKey: options.readKey
+  });
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ */
+
+Keen.prototype.loaded = function () {
+  return !! (window.Keen && window.Keen.Base64);
+};
+
+
+/**
+ * Load the Keen IO library.
+ *
+ * @param {Function} callback
+ */
+
+Keen.prototype.load = function (callback) {
+  load('//dc8na2hxrj29i.cloudfront.net/code/keen-2.1.0-min.js', callback);
+};
+
+
+/**
+ * Page.
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+Keen.prototype.page = function (category, name, properties, options) {
+  var opts = this.options;
+
+  // all pages
+  if (opts.trackAllPages) {
+    this.track('Loaded a Page', properties);
+  }
+
+  // named pages
+  if (name && opts.trackNamedPages) {
+    if (name && category) name = category + ' ' + name;
+    this.track('Viewed ' + name + ' Page', properties);
+  }
+
+  // categorized pages
+  if (category && opts.trackCategorizedPages) {
+    this.track('Viewed ' + category + ' Page', properties);
+  }
+};
+
+
+/**
+ * Identify.
+ *
+ * TODO: migrate from old `userId` to simpler `id`
+ *
+ * @param {String} id (optional)
+ * @param {Object} traits (optional)
+ * @param {Object} options (optional)
+ */
+
+Keen.prototype.identify = function (id, traits, options) {
+  traits = traits || {};
+  var user = {};
+  if (id) user.userId = id;
+  if (traits) user.traits = traits;
+  window.Keen.setGlobalProperties(function() {
+    return { user: user };
+  });
+};
+
+
+/**
+ * Track.
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+Keen.prototype.track = function (event, properties, options) {
+  window.Keen.addEvent(event, properties);
+};
+});
+require.register("segmentio-analytics.js-integrations/lib/kissmetrics.js", function(exports, require, module){
+
+var alias = require('alias');
+var Batch = require('batch');
+var callback = require('callback');
+var integration = require('integration');
+var is = require('is');
+var load = require('load-script');
+var push = require('global-queue')('_kmq');
+
+
+/**
+ * Expose plugin.
+ */
+
+module.exports = exports = function (analytics) {
+  analytics.addIntegration(KISSmetrics);
+};
+
+
+/**
+ * Expose `KISSmetrics` integration.
+ */
+
+var KISSmetrics = exports.Integration = integration('KISSmetrics')
+  .assumesPageview()
+  .readyOnInitialize()
+  .global('_kmq')
+  .global('KM')
+  .global('_kmil')
+  .option('apiKey', '')
+  .option('trackNamedPages', true)
+  .option('trackCategorizedPages', true);
+
+
+/**
+ * Initialize.
+ *
+ * http://support.kissmetrics.com/apis/javascript
+ *
+ * @param {Object} page
+ */
+
+KISSmetrics.prototype.initialize = function (page) {
+  window._kmq = [];
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ */
+
+KISSmetrics.prototype.loaded = function () {
+  return is.object(window.KM);
+};
+
+
+/**
+ * Load.
+ *
+ * @param {Function} callback
+ */
+
+KISSmetrics.prototype.load = function (callback) {
+  var key = this.options.apiKey;
+  var useless = '//i.kissmetrics.com/i.js';
+  var library = '//doug1izaerwt3.cloudfront.net/' + key + '.1.js';
+
+  new Batch()
+    .push(function (done) { load(useless, done); }) // :)
+    .push(function (done) { load(library, done); })
+    .end(callback);
+};
+
+
+/**
+ * Page.
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+KISSmetrics.prototype.page = function (category, name, properties, options) {
+  properties = properties || {};
+  var opts = this.options;
+
+  // named pages
+  if (name && opts.trackNamedPages) {
+    if (name && category) name = category + ' ' + name;
+    this.track('Viewed ' + name + ' Page', properties);
+  }
+
+  // categorized pages
+  if (category && opts.trackCategorizedPages) {
+    this.track('Viewed ' + category + ' Page', properties);
+  }
+};
+
+
+/**
+ * Identify.
+ *
+ * @param {String} id (optional)
+ * @param {Object} traits (optional)
+ * @param {Object} options (optional)
+ */
+
+KISSmetrics.prototype.identify = function (id, traits, options) {
+  traits = traits || {};
+  if (id) push('identify', id);
+  if (traits) push('set', traits);
+};
+
+
+/**
+ * Track.
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+KISSmetrics.prototype.track = function (event, properties, options) {
+  properties = properties || {};
+  properties = alias(properties, { revenue: 'Billing Amount' });
+  push('record', event, properties);
+};
+
+
+/**
+ * Alias.
+ *
+ * @param {String} to
+ * @param {String} from (optional)
+ */
+
+KISSmetrics.prototype.alias = function (to, from) {
+  push('alias', to, from);
+};
+});
+require.register("segmentio-analytics.js-integrations/lib/mixpanel.js", function(exports, require, module){
+
+var alias = require('alias');
+var clone = require('clone');
+var integration = require('integration');
+var load = require('load-script');
+
+
+/**
+ * Expose plugin.
+ */
+
+module.exports = exports = function (analytics) {
+  analytics.addIntegration(Mixpanel);
+};
+
+
+/**
+ * Expose `Mixpanel` integration.
+ */
+
+var Mixpanel = exports.Integration = integration('Mixpanel')
+  .readyOnLoad()
+  .global('mixpanel')
+  .option('cookieName', '')
+  .option('nameTag', true)
+  .option('pageview', false)
+  .option('people', false)
+  .option('token', '')
+  .option('trackAllPages', false)
+  .option('trackNamedPages', true)
+  .option('trackCategorizedPages', true);
+
+
+/**
+ * Options aliases.
+ */
+
+var optionsAliases = {
+  cookieName: 'cookie_name'
+};
+
+
+/**
+ * Initialize.
+ *
+ * https://mixpanel.com/help/reference/javascript#installing
+ * https://mixpanel.com/help/reference/javascript-full-api-reference#mixpanel.init
+ */
+
+Mixpanel.prototype.initialize = function () {
+  (function (c, a) {window.mixpanel = a; var b, d, h, e; a._i = []; a.init = function (b, c, f) {function d(a, b) {var c = b.split('.'); 2 == c.length && (a = a[c[0]], b = c[1]); a[b] = function () {a.push([b].concat(Array.prototype.slice.call(arguments, 0))); }; } var g = a; 'undefined' !== typeof f ? g = a[f] = [] : f = 'mixpanel'; g.people = g.people || []; h = ['disable', 'track', 'track_pageview', 'track_links', 'track_forms', 'register', 'register_once', 'unregister', 'identify', 'alias', 'name_tag', 'set_config', 'people.set', 'people.increment', 'people.track_charge', 'people.append']; for (e = 0; e < h.length; e++) d(g, h[e]); a._i.push([b, c, f]); }; a.__SV = 1.2; })(document, window.mixpanel || []);
+  var options = alias(this.options, optionsAliases);
+  window.mixpanel.init(options.token, options);
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ */
+
+Mixpanel.prototype.loaded = function () {
+  return !! (window.mixpanel && window.mixpanel.config);
+};
+
+
+/**
+ * Load.
+ *
+ * @param {Function} callback
+ */
+
+Mixpanel.prototype.load = function (callback) {
+  load('//cdn.mxpnl.com/libs/mixpanel-2.2.min.js', callback);
+};
+
+
+/**
+ * Page.
+ *
+ * https://mixpanel.com/help/reference/javascript-full-api-reference#mixpanel.track_pageview
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+Mixpanel.prototype.page = function (category, name, properties, options) {
+  var opts = this.options;
+
+  // all pages
+  if (opts.trackAllPages) {
+    this.track('Loaded a Page', properties);
+  }
+
+  // categorized pages
+  if (category && opts.trackCategorizedPages) {
+    this.track('Viewed ' + category + ' Page', properties);
+  }
+
+  // named pages
+  if (name && opts.trackNamedPages) {
+    if (name && category) name = category + ' ' + name;
+    this.track('Viewed ' + name + ' Page', properties);
+  }
+};
+
+
+/**
+ * Trait aliases.
+ */
+
+var traitAliases = {
+  created: '$created',
+  email: '$email',
+  firstName: '$first_name',
+  lastName: '$last_name',
+  lastSeen: '$last_seen',
+  name: '$name',
+  username: '$username',
+  phone: '$phone'
+};
+
+
+/**
+ * Identify.
+ *
+ * https://mixpanel.com/help/reference/javascript#super-properties
+ * https://mixpanel.com/help/reference/javascript#user-identity
+ * https://mixpanel.com/help/reference/javascript#storing-user-profiles
+ *
+ * @param {String} id (optional)
+ * @param {Object} traits (optional)
+ * @param {Object} options (optional)
+ */
+
+Mixpanel.prototype.identify = function (id, traits, options) {
+  traits = traits || {};
+
+  // id
+  if (id) window.mixpanel.identify(id);
+
+  // name tag
+  var nametag = traits.email || traits.username || id;
+  if (nametag) window.mixpanel.name_tag(nametag);
+
+  // traits
+  traits = alias(traits, traitAliases);
+  window.mixpanel.register(traits);
+  if (this.options.people) window.mixpanel.people.set(traits);
+};
+
+
+/**
+ * Track.
+ *
+ * https://mixpanel.com/help/reference/javascript#sending-events
+ * https://mixpanel.com/help/reference/javascript#tracking-revenue
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ */
+
+Mixpanel.prototype.track = function (event, properties, options) {
+  properties = properties || {};
+  window.mixpanel.track(event, properties);
+  if (properties.revenue && this.options.people) {
+    window.mixpanel.people.track_charge(properties.revenue);
+  }
+};
+
+
+/**
+ * Alias.
+ *
+ * https://mixpanel.com/help/reference/javascript#user-identity
+ * https://mixpanel.com/help/reference/javascript-full-api-reference#mixpanel.alias
+ *
+ * @param {String} to
+ * @param {String} from (optional)
+ */
+
+Mixpanel.prototype.alias = function (to, from) {
+  var mp = window.mixpanel;
+  if (mp.get_distinct_id && mp.get_distinct_id() === to) return;
+  // HACK: internal mixpanel API to ensure we don't overwrite
+  if (mp.get_property && mp.get_property('$people_distinct_id') === to) return;
+  // although undocumented, mixpanel takes an optional original id
+  mp.alias(to, from);
+};
+});
+require.register("segmentio-canonical/index.js", function(exports, require, module){
+module.exports = function canonical () {
+  var tags = document.getElementsByTagName('link');
+  for (var i = 0, tag; tag = tags[i]; i++) {
+    if ('canonical' == tag.getAttribute('rel')) return tag.getAttribute('href');
+  }
+};
+});
+require.register("segmentio-extend/index.js", function(exports, require, module){
+
+module.exports = function extend (object) {
+    // Takes an unlimited number of extenders.
+    var args = Array.prototype.slice.call(arguments, 1);
+
+    // For each extender, copy their properties on our object.
+    for (var i = 0, source; source = args[i]; i++) {
+        if (!source) continue;
+        for (var property in source) {
+            object[property] = source[property];
+        }
+    }
+
+    return object;
+};
+});
+require.register("segmentio-is-email/index.js", function(exports, require, module){
+
+/**
+ * Expose `isEmail`.
+ */
+
+module.exports = isEmail;
+
+
+/**
+ * Email address matcher.
+ */
+
+var matcher = /.+\@.+\..+/;
+
+
+/**
+ * Loosely validate an email address.
+ *
+ * @param {String} string
+ * @return {Boolean}
+ */
+
+function isEmail (string) {
+  return matcher.test(string);
+}
+});
+require.register("segmentio-is-meta/index.js", function(exports, require, module){
+module.exports = function isMeta (e) {
+    if (e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return true;
+
+    // Logic that handles checks for the middle mouse button, based
+    // on [jQuery](https://github.com/jquery/jquery/blob/master/src/event.js#L466).
+    var which = e.which, button = e.button;
+    if (!which && button !== undefined) {
+      return (!button & 1) && (!button & 2) && (button & 4);
+    } else if (which === 2) {
+      return true;
+    }
+
+    return false;
+};
+});
+require.register("segmentio-isodate/index.js", function(exports, require, module){
+
+/**
+ * Matcher, slightly modified from:
+ *
+ * https://github.com/csnover/js-iso8601/blob/lax/iso8601.js
+ */
+
+var matcher = /^(\d{4})(?:-?(\d{2})(?:-?(\d{2}))?)?(?:([ T])(\d{2}):?(\d{2})(?::?(\d{2})(?:[,\.](\d{1,}))?)?(?:(Z)|([+\-])(\d{2})(?::?(\d{2}))?)?)?$/;
+
+
+/**
+ * Convert an ISO date string to a date. Fallback to native `Date.parse`.
+ *
+ * https://github.com/csnover/js-iso8601/blob/lax/iso8601.js
+ *
+ * @param {String} iso
+ * @return {Date}
+ */
+
+exports.parse = function (iso) {
+  var numericKeys = [1, 5, 6, 7, 8, 11, 12];
+  var arr = matcher.exec(iso);
+  var offset = 0;
+
+  // fallback to native parsing
+  if (!arr) return new Date(iso);
+
+  // remove undefined values
+  for (var i = 0, val; val = numericKeys[i]; i++) {
+    arr[val] = parseInt(arr[val], 10) || 0;
+  }
+
+  // allow undefined days and months
+  arr[2] = parseInt(arr[2], 10) || 1;
+  arr[3] = parseInt(arr[3], 10) || 1;
+
+  // month is 0-11
+  arr[2]--;
+
+  // allow abitrary sub-second precision
+  if (arr[8]) arr[8] = (arr[8] + '00').substring(0, 3);
+
+  // apply timezone if one exists
+  if (arr[4] == ' ') {
+    offset = new Date().getTimezoneOffset();
+  } else if (arr[9] !== 'Z' && arr[10]) {
+    offset = arr[11] * 60 + arr[12];
+    if ('+' == arr[10]) offset = 0 - offset;
+  }
+
+  var millis = Date.UTC(arr[1], arr[2], arr[3], arr[5], arr[6] + offset, arr[7], arr[8]);
+  return new Date(millis);
+};
+
+
+/**
+ * Checks whether a `string` is an ISO date string. `strict` mode requires that
+ * the date string at least have a year, month and date.
+ *
+ * @param {String} string
+ * @param {Boolean} strict
+ * @return {Boolean}
+ */
+
+exports.is = function (string, strict) {
+  if (strict && false === /^\d{4}-\d{2}-\d{2}/.test(string)) return false;
+  return matcher.test(string);
+};
+});
+require.register("segmentio-isodate-traverse/index.js", function(exports, require, module){
+
+var clone = require('clone')
+  , each = require('each')
+  , is = require('is')
+  , isodate = require('isodate');
+
+
+/**
+ * Expose `traverse`.
+ */
+
+module.exports = traverse;
+
+
+/**
+ * Traverse an object, parsing all ISO strings into dates and returning a clone.
+ *
+ * @param {Object} obj
+ * @return {Object}
+ */
+
+function traverse (obj, strict) {
+  obj = clone(obj);
+  if (strict === undefined) strict = true;
+  each(obj, function (key, val) {
+    if (isodate.is(val, strict)) {
+      obj[key] = isodate.parse(val);
+    } else if (is.object(val)) {
+      obj[key] = traverse(val);
+    }
+  });
+  return obj;
+}
 });
 require.register("component-json-fallback/index.js", function(exports, require, module){
 /*
@@ -991,1069 +3919,1137 @@ var JSON = {};
 
 module.exports = JSON
 });
-require.register("component-object/index.js", function(exports, require, module){
+require.register("segmentio-json/index.js", function(exports, require, module){
+
+module.exports = 'undefined' == typeof JSON
+  ? require('json-fallback')
+  : JSON;
+
+});
+require.register("segmentio-new-date/lib/index.js", function(exports, require, module){
+
+var is = require('is');
+var isodate = require('isodate');
+var milliseconds = require('./milliseconds');
+var seconds = require('./seconds');
+
 
 /**
- * HOP ref.
- */
-
-var has = Object.prototype.hasOwnProperty;
-
-/**
- * Return own keys in `obj`.
+ * Returns a new Javascript Date object, allowing a variety of extra input types
+ * over the native Date constructor.
  *
- * @param {Object} obj
- * @return {Array}
- * @api public
+ * @param {Date|String|Number} val
  */
 
-exports.keys = Object.keys || function(obj){
-  var keys = [];
-  for (var key in obj) {
-    if (has.call(obj, key)) {
-      keys.push(key);
-    }
-  }
-  return keys;
+module.exports = function newDate (val) {
+  if (is.date(val)) return val;
+  if (is.number(val)) return new Date(toMs(val));
+
+  // date strings
+  if (isodate.is(val)) return isodate.parse(val);
+  if (milliseconds.is(val)) return milliseconds.parse(val);
+  if (seconds.is(val)) return seconds.parse(val);
+
+  // fallback to Date.parse
+  return new Date(val);
 };
 
+
 /**
- * Return own values in `obj`.
+ * If the number passed val is seconds from the epoch, turn it into milliseconds.
+ * Milliseconds would be greater than 31557600000 (December 31, 1970).
  *
- * @param {Object} obj
- * @return {Array}
- * @api public
+ * @param {Number} num
  */
 
-exports.values = function(obj){
-  var vals = [];
-  for (var key in obj) {
-    if (has.call(obj, key)) {
-      vals.push(obj[key]);
-    }
-  }
-  return vals;
-};
+function toMs (num) {
+  if (num < 31557600000) return num * 1000;
+  return num;
+}
+});
+require.register("segmentio-new-date/lib/milliseconds.js", function(exports, require, module){
 
 /**
- * Merge `b` into `a`.
- *
- * @param {Object} a
- * @param {Object} b
- * @return {Object} a
- * @api public
+ * Matcher.
  */
 
-exports.merge = function(a, b){
-  for (var key in b) {
-    if (has.call(b, key)) {
-      a[key] = b[key];
-    }
-  }
-  return a;
-};
+var matcher = /\d{13}/;
+
 
 /**
- * Return length of `obj`.
+ * Check whether a string is a millisecond date string.
  *
- * @param {Object} obj
- * @return {Number}
- * @api public
- */
-
-exports.length = function(obj){
-  return exports.keys(obj).length;
-};
-
-/**
- * Check if `obj` is empty.
- *
- * @param {Object} obj
+ * @param {String} string
  * @return {Boolean}
- * @api public
  */
 
-exports.isEmpty = function(obj){
-  return 0 == exports.length(obj);
+exports.is = function (string) {
+  return matcher.test(string);
+};
+
+
+/**
+ * Convert a millisecond string to a date.
+ *
+ * @param {String} millis
+ * @return {Date}
+ */
+
+exports.parse = function (millis) {
+  millis = parseInt(millis, 10);
+  return new Date(millis);
 };
 });
-require.register("component-trim/index.js", function(exports, require, module){
+require.register("segmentio-new-date/lib/seconds.js", function(exports, require, module){
 
-exports = module.exports = trim;
+/**
+ * Matcher.
+ */
 
-function trim(str){
-  return str.replace(/^\s*|\s*$/g, '');
+var matcher = /\d{10}/;
+
+
+/**
+ * Check whether a string is a second date string.
+ *
+ * @param {String} string
+ * @return {Boolean}
+ */
+
+exports.is = function (string) {
+  return matcher.test(string);
+};
+
+
+/**
+ * Convert a second string to a date.
+ *
+ * @param {String} seconds
+ * @return {Date}
+ */
+
+exports.parse = function (seconds) {
+  var millis = parseInt(seconds, 10) * 1000;
+  return new Date(millis);
+};
+});
+require.register("segmentio-store.js/store.js", function(exports, require, module){
+;(function(win){
+	var store = {},
+		doc = win.document,
+		localStorageName = 'localStorage',
+		namespace = '__storejs__',
+		storage
+
+	store.disabled = false
+	store.set = function(key, value) {}
+	store.get = function(key) {}
+	store.remove = function(key) {}
+	store.clear = function() {}
+	store.transact = function(key, defaultVal, transactionFn) {
+		var val = store.get(key)
+		if (transactionFn == null) {
+			transactionFn = defaultVal
+			defaultVal = null
+		}
+		if (typeof val == 'undefined') { val = defaultVal || {} }
+		transactionFn(val)
+		store.set(key, val)
+	}
+	store.getAll = function() {}
+
+	store.serialize = function(value) {
+		return JSON.stringify(value)
+	}
+	store.deserialize = function(value) {
+		if (typeof value != 'string') { return undefined }
+		try { return JSON.parse(value) }
+		catch(e) { return value || undefined }
+	}
+
+	// Functions to encapsulate questionable FireFox 3.6.13 behavior
+	// when about.config::dom.storage.enabled === false
+	// See https://github.com/marcuswestin/store.js/issues#issue/13
+	function isLocalStorageNameSupported() {
+		try { return (localStorageName in win && win[localStorageName]) }
+		catch(err) { return false }
+	}
+
+	if (isLocalStorageNameSupported()) {
+		storage = win[localStorageName]
+		store.set = function(key, val) {
+			if (val === undefined) { return store.remove(key) }
+			storage.setItem(key, store.serialize(val))
+			return val
+		}
+		store.get = function(key) { return store.deserialize(storage.getItem(key)) }
+		store.remove = function(key) { storage.removeItem(key) }
+		store.clear = function() { storage.clear() }
+		store.getAll = function() {
+			var ret = {}
+			for (var i=0; i<storage.length; ++i) {
+				var key = storage.key(i)
+				ret[key] = store.get(key)
+			}
+			return ret
+		}
+	} else if (doc.documentElement.addBehavior) {
+		var storageOwner,
+			storageContainer
+		// Since #userData storage applies only to specific paths, we need to
+		// somehow link our data to a specific path.  We choose /favicon.ico
+		// as a pretty safe option, since all browsers already make a request to
+		// this URL anyway and being a 404 will not hurt us here.  We wrap an
+		// iframe pointing to the favicon in an ActiveXObject(htmlfile) object
+		// (see: http://msdn.microsoft.com/en-us/library/aa752574(v=VS.85).aspx)
+		// since the iframe access rules appear to allow direct access and
+		// manipulation of the document element, even for a 404 page.  This
+		// document can be used instead of the current document (which would
+		// have been limited to the current path) to perform #userData storage.
+		try {
+			storageContainer = new ActiveXObject('htmlfile')
+			storageContainer.open()
+			storageContainer.write('<s' + 'cript>document.w=window</s' + 'cript><iframe src="/favicon.ico"></iframe>')
+			storageContainer.close()
+			storageOwner = storageContainer.w.frames[0].document
+			storage = storageOwner.createElement('div')
+		} catch(e) {
+			// somehow ActiveXObject instantiation failed (perhaps some special
+			// security settings or otherwse), fall back to per-path storage
+			storage = doc.createElement('div')
+			storageOwner = doc.body
+		}
+		function withIEStorage(storeFunction) {
+			return function() {
+				var args = Array.prototype.slice.call(arguments, 0)
+				args.unshift(storage)
+				// See http://msdn.microsoft.com/en-us/library/ms531081(v=VS.85).aspx
+				// and http://msdn.microsoft.com/en-us/library/ms531424(v=VS.85).aspx
+				storageOwner.appendChild(storage)
+				storage.addBehavior('#default#userData')
+				storage.load(localStorageName)
+				var result = storeFunction.apply(store, args)
+				storageOwner.removeChild(storage)
+				return result
+			}
+		}
+
+		// In IE7, keys may not contain special chars. See all of https://github.com/marcuswestin/store.js/issues/40
+		var forbiddenCharsRegex = new RegExp("[!\"#$%&'()*+,/\\\\:;<=>?@[\\]^`{|}~]", "g")
+		function ieKeyFix(key) {
+			return key.replace(forbiddenCharsRegex, '___')
+		}
+		store.set = withIEStorage(function(storage, key, val) {
+			key = ieKeyFix(key)
+			if (val === undefined) { return store.remove(key) }
+			storage.setAttribute(key, store.serialize(val))
+			storage.save(localStorageName)
+			return val
+		})
+		store.get = withIEStorage(function(storage, key) {
+			key = ieKeyFix(key)
+			return store.deserialize(storage.getAttribute(key))
+		})
+		store.remove = withIEStorage(function(storage, key) {
+			key = ieKeyFix(key)
+			storage.removeAttribute(key)
+			storage.save(localStorageName)
+		})
+		store.clear = withIEStorage(function(storage) {
+			var attributes = storage.XMLDocument.documentElement.attributes
+			storage.load(localStorageName)
+			for (var i=0, attr; attr=attributes[i]; i++) {
+				storage.removeAttribute(attr.name)
+			}
+			storage.save(localStorageName)
+		})
+		store.getAll = withIEStorage(function(storage) {
+			var attributes = storage.XMLDocument.documentElement.attributes
+			var ret = {}
+			for (var i=0, attr; attr=attributes[i]; ++i) {
+				var key = ieKeyFix(attr.name)
+				ret[attr.name] = store.deserialize(storage.getAttribute(key))
+			}
+			return ret
+		})
+	}
+
+	try {
+		store.set(namespace, namespace)
+		if (store.get(namespace) != namespace) { store.disabled = true }
+		store.remove(namespace)
+	} catch(e) {
+		store.disabled = true
+	}
+	store.enabled = !store.disabled
+	if (typeof module != 'undefined' && module.exports) { module.exports = store }
+	else if (typeof define === 'function' && define.amd) { define(store) }
+	else { win.store = store }
+})(this.window || global);
+
+});
+require.register("segmentio-top-domain/index.js", function(exports, require, module){
+
+var url = require('url');
+
+// Official Grammar: http://tools.ietf.org/html/rfc883#page-56
+// Look for tlds with up to 2-6 characters.
+
+module.exports = function (urlStr) {
+
+  var host     = url.parse(urlStr).hostname
+    , topLevel = host.match(/[a-z0-9][a-z0-9\-]*[a-z0-9]\.[a-z\.]{2,6}$/i);
+
+  return topLevel ? topLevel[0] : host;
+};
+});
+require.register("yields-prevent/index.js", function(exports, require, module){
+
+/**
+ * prevent default on the given `e`.
+ * 
+ * examples:
+ * 
+ *      anchor.onclick = prevent;
+ *      anchor.onclick = function(e){
+ *        if (something) return prevent(e);
+ *      };
+ * 
+ * @param {Event} e
+ */
+
+module.exports = function(e){
+  e = e || window.event
+  return e.preventDefault
+    ? e.preventDefault()
+    : e.returnValue = false;
+};
+
+});
+require.register("visionmedia-debug/index.js", function(exports, require, module){
+if ('undefined' == typeof window) {
+  module.exports = require('./lib/debug');
+} else {
+  module.exports = require('./debug');
 }
 
-exports.left = function(str){
-  return str.replace(/^\s*/, '');
-};
-
-exports.right = function(str){
-  return str.replace(/\s*$/, '');
-};
-
 });
-require.register("redventures-reduce/index.js", function(exports, require, module){
+require.register("visionmedia-debug/debug.js", function(exports, require, module){
 
 /**
- * Reduce `arr` with `fn`.
- *
- * @param {Array} arr
- * @param {Function} fn
- * @param {Mixed} initial
- *
- * TODO: combatible error handling?
+ * Expose `debug()` as the module.
  */
 
-module.exports = function(arr, fn, initial){  
-  var idx = 0;
-  var len = arr.length;
-  var curr = arguments.length == 3
-    ? initial
-    : arr[idx++];
-
-  while (idx < len) {
-    curr = fn.call(null, curr, arr[idx], ++idx, arr);
-  }
-  
-  return curr;
-};
-});
-require.register("component-querystring/index.js", function(exports, require, module){
+module.exports = debug;
 
 /**
- * Module dependencies.
- */
-
-var trim = require('trim')
-  , reduce = require('reduce');
-
-/**
- * Parse the given query `str`.
+ * Create a debugger with the given `name`.
  *
- * @param {String} str
- * @return {Object}
+ * @param {String} name
+ * @return {Type}
  * @api public
  */
 
-exports.parse = function(str){
-  if ('string' != typeof str) return {};
-  str = trim(str);
-  if ('' == str) return {};
-  return reduce(str.split('&'), function(obj, pair){
-    var parts = pair.split('=');
-    obj[parts[0]] = null == parts[1]
-      ? ''
-      : decodeURIComponent(parts[1]);
-    return obj;
-  }, {});
+function debug(name) {
+  if (!debug.enabled(name)) return function(){};
+
+  return function(fmt){
+    fmt = coerce(fmt);
+
+    var curr = new Date;
+    var ms = curr - (debug[name] || curr);
+    debug[name] = curr;
+
+    fmt = name
+      + ' '
+      + fmt
+      + ' +' + debug.humanize(ms);
+
+    // This hackery is required for IE8
+    // where `console.log` doesn't have 'apply'
+    window.console
+      && console.log
+      && Function.prototype.apply.call(console.log, console, arguments);
+  }
+}
+
+/**
+ * The currently active debug mode names.
+ */
+
+debug.names = [];
+debug.skips = [];
+
+/**
+ * Enables a debug mode by name. This can include modes
+ * separated by a colon and wildcards.
+ *
+ * @param {String} name
+ * @api public
+ */
+
+debug.enable = function(name) {
+  try {
+    localStorage.debug = name;
+  } catch(e){}
+
+  var split = (name || '').split(/[\s,]+/)
+    , len = split.length;
+
+  for (var i = 0; i < len; i++) {
+    name = split[i].replace('*', '.*?');
+    if (name[0] === '-') {
+      debug.skips.push(new RegExp('^' + name.substr(1) + '$'));
+    }
+    else {
+      debug.names.push(new RegExp('^' + name + '$'));
+    }
+  }
 };
 
 /**
- * Stringify the given `obj`.
+ * Disable debug output.
  *
- * @param {Object} obj
+ * @api public
+ */
+
+debug.disable = function(){
+  debug.enable('');
+};
+
+/**
+ * Humanize the given `ms`.
+ *
+ * @param {Number} m
  * @return {String}
- * @api public
+ * @api private
  */
 
-exports.stringify = function(obj){
-  if (!obj) return '';
-  var pairs = [];
-  for (var key in obj) {
-    pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(obj[key]));
-  }
-  return pairs.join('&');
-};
-});
-require.register("component-type/index.js", function(exports, require, module){
+debug.humanize = function(ms) {
+  var sec = 1000
+    , min = 60 * 1000
+    , hour = 60 * min;
 
-/**
- * toString ref.
- */
-
-var toString = Object.prototype.toString;
-
-/**
- * Return the type of `val`.
- *
- * @param {Mixed} val
- * @return {String}
- * @api public
- */
-
-module.exports = function(val){
-  switch (toString.call(val)) {
-    case '[object Function]': return 'function';
-    case '[object Date]': return 'date';
-    case '[object RegExp]': return 'regexp';
-    case '[object Arguments]': return 'arguments';
-    case '[object Array]': return 'array';
-    case '[object String]': return 'string';
-  }
-
-  if (val === null) return 'null';
-  if (val === undefined) return 'undefined';
-  if (val === Object(val)) return 'object';
-
-  return typeof val;
-};
-
-});
-require.register("component-url/index.js", function(exports, require, module){
-
-/**
- * Parse the given `url`.
- *
- * @param {String} str
- * @return {Object}
- * @api public
- */
-
-exports.parse = function(url){
-  var a = document.createElement('a');
-  a.href = url;
-  return {
-    href: a.href,
-    host: a.host || location.host,
-    port: a.port || location.port,
-    hash: a.hash,
-    hostname: a.hostname || location.hostname,
-    pathname: a.pathname.charAt(0) != '/' ? '/' + a.pathname : a.pathname,
-    protocol: !a.protocol || ':' == a.protocol ? location.protocol : a.protocol,
-    search: a.search,
-    query: a.search.slice(1)
-  };
+  if (ms >= hour) return (ms / hour).toFixed(1) + 'h';
+  if (ms >= min) return (ms / min).toFixed(1) + 'm';
+  if (ms >= sec) return (ms / sec | 0) + 's';
+  return ms + 'ms';
 };
 
 /**
- * Check if `url` is absolute.
+ * Returns true if the given mode name is enabled, false otherwise.
  *
- * @param {String} url
+ * @param {String} name
  * @return {Boolean}
  * @api public
  */
 
-exports.isAbsolute = function(url){
-  return 0 == url.indexOf('//') || !!~url.indexOf('://');
-};
-
-/**
- * Check if `url` is relative.
- *
- * @param {String} url
- * @return {Boolean}
- * @api public
- */
-
-exports.isRelative = function(url){
-  return !exports.isAbsolute(url);
-};
-
-/**
- * Check if `url` is cross domain.
- *
- * @param {String} url
- * @return {Boolean}
- * @api public
- */
-
-exports.isCrossDomain = function(url){
-  url = exports.parse(url);
-  return url.hostname !== location.hostname
-    || url.port !== location.port
-    || url.protocol !== location.protocol;
-};
-});
-require.register("segmentio-after/index.js", function(exports, require, module){
-
-module.exports = function after (times, func) {
-  // After 0, really?
-  if (times <= 0) return func();
-
-  // That's more like it.
-  return function() {
-    if (--times < 1) {
-      return func.apply(this, arguments);
+debug.enabled = function(name) {
+  for (var i = 0, len = debug.skips.length; i < len; i++) {
+    if (debug.skips[i].test(name)) {
+      return false;
     }
-  };
-};
-});
-require.register("segmentio-alias/index.js", function(exports, require, module){
-
-module.exports = function alias (object, aliases) {
-    // For each of our aliases, rename our object's keys.
-    for (var oldKey in aliases) {
-        var newKey = aliases[oldKey];
-        if (object[oldKey] !== undefined) {
-            object[newKey] = object[oldKey];
-            delete object[oldKey];
-        }
-    }
-};
-});
-require.register("segmentio-extend/index.js", function(exports, require, module){
-
-module.exports = function extend (object) {
-    // Takes an unlimited number of extenders.
-    var args = Array.prototype.slice.call(arguments, 1);
-
-    // For each extender, copy their properties on our object.
-    for (var i = 0, source; source = args[i]; i++) {
-        if (!source) continue;
-        for (var property in source) {
-            object[property] = source[property];
-        }
-    }
-
-    return object;
-};
-});
-require.register("segmentio-is-email/index.js", function(exports, require, module){
-
-module.exports = function isEmail (string) {
-    return (/.+\@.+\..+/).test(string);
-};
-});
-require.register("segmentio-load-script/index.js", function(exports, require, module){
-var type = require('type');
-
-
-module.exports = function loadScript (options, callback) {
-    if (!options) throw new Error('Cant load nothing...');
-
-    // Allow for the simplest case, just passing a `src` string.
-    if (type(options) === 'string') options = { src : options };
-
-    var https = document.location.protocol === 'https:';
-
-    // If you use protocol relative URLs, third-party scripts like Google
-    // Analytics break when testing with `file:` so this fixes that.
-    if (options.src && options.src.indexOf('//') === 0) {
-        options.src = https ? 'https:' + options.src : 'http:' + options.src;
-    }
-
-    // Allow them to pass in different URLs depending on the protocol.
-    if (https && options.https) options.src = options.https;
-    else if (!https && options.http) options.src = options.http;
-
-    // Make the `<script>` element and insert it before the first script on the
-    // page, which is guaranteed to exist since this Javascript is running.
-    var script = document.createElement('script');
-    script.type = 'text/javascript';
-    script.async = true;
-    script.src = options.src;
-
-    var firstScript = document.getElementsByTagName('script')[0];
-    firstScript.parentNode.insertBefore(script, firstScript);
-
-    // If we have a callback, attach event handlers, even in IE. Based off of
-    // the Third-Party Javascript script loading example:
-    // https://github.com/thirdpartyjs/thirdpartyjs-code/blob/master/examples/templates/02/loading-files/index.html
-    if (callback && type(callback) === 'function') {
-        if (script.addEventListener) {
-            script.addEventListener('load', callback, false);
-        } else if (script.attachEvent) {
-            script.attachEvent('onreadystatechange', function () {
-                if (/complete|loaded/.test(script.readyState)) callback();
-            });
-        }
-    }
-
-    // Return the script element in case they want to do anything special, like
-    // give it an ID or attributes.
-    return script;
-};
-});
-require.register("segmentio-canonical/index.js", function(exports, require, module){
-module.exports = function canonical () {
-  var tags = document.getElementsByTagName('link');
-  for (var i = 0, tag; tag = tags[i]; i++) {
-    if ('canonical' == tag.getAttribute('rel')) return tag.getAttribute('href');
   }
+  for (var i = 0, len = debug.names.length; i < len; i++) {
+    if (debug.names[i].test(name)) {
+      return true;
+    }
+  }
+  return false;
 };
+
+/**
+ * Coerce `val`.
+ */
+
+function coerce(val) {
+  if (val instanceof Error) return val.stack || val.message;
+  return val;
+}
+
+// persist
+
+try {
+  if (window.localStorage) debug.enable(localStorage.debug);
+} catch(e){}
+
 });
-require.register("analytics/src/index.js", function(exports, require, module){
-// Analytics.js
-// (c) 2013 Segment.io Inc.
-// Analytics.js may be freely distributed under the MIT license.
+require.register("analytics/lib/index.js", function(exports, require, module){
+/**
+ * Analytics.js
+ *
+ * (C) 2013 Segment.io Inc.
+ */
 
-var Analytics = require('./analytics')
-  , providers = require('./providers');
+var Analytics = require('./analytics');
+var createIntegration = require('integration');
+var each = require('each');
+var Integrations = require('integrations');
 
 
-module.exports = new Analytics(providers);
+/**
+ * Expose the `analytics` singleton.
+ */
+
+var analytics = module.exports = exports = new Analytics();
+
+
+/**
+ * Expose `VERSION`.
+ */
+
+exports.VERSION = '1.0.8';
+
+
+/**
+ * Add integrations.
+ */
+
+each(Integrations, function (name, Integration) {
+  analytics.use(Integration);
 });
-require.register("analytics/src/analytics.js", function(exports, require, module){
-var after       = require('after')
-  , bind        = require('event').bind
-  , clone       = require('clone')
-  , each        = require('each')
-  , extend      = require('extend')
-  , size        = require('object').length
-  , Provider    = require('./provider')
-  , providers   = require('./providers')
-  , querystring = require('querystring')
-  , type        = require('type')
-  , url         = require('url')
-  , user        = require('./user')
-  , utils       = require('./utils');
+});
+require.register("analytics/lib/analytics.js", function(exports, require, module){
 
+var after = require('after');
+var bind = require('bind');
+var callback = require('callback');
+var canonical = require('canonical');
+var clone = require('clone');
+var cookie = require('./cookie');
+var debug = require('debug');
+var defaults = require('defaults');
+var each = require('each');
+var Emitter = require('emitter');
+var group = require('./group');
+var is = require('is');
+var isEmail = require('is-email');
+var isMeta = require('is-meta');
+var newDate = require('new-date');
+var on = require('event').bind;
+var prevent = require('prevent');
+var querystring = require('querystring');
+var size = require('object').length;
+var store = require('./store');
+var traverse = require('isodate-traverse');
+var url = require('url');
+var user = require('./user');
+
+
+/**
+ * Expose `Analytics`.
+ */
 
 module.exports = Analytics;
 
 
-function Analytics (Providers) {
-  this.VERSION = '0.8.3';
+/**
+ * Initialize a new `Analytics` instance.
+ */
+
+function Analytics () {
+  this.Integrations = {};
+  this._integrations = {};
+  this._readied = false;
+  this._timeout = 300;
+  this._user = user; // BACKWARDS COMPATIBILITY
+  bind.all(this);
 
   var self = this;
-  // Loop through and add each of our `Providers`, so they can be initialized
-  // later by the user.
-  each(Providers, function (key, Provider) {
-    self.addProvider(key, Provider);
+  this.on('initialize', function (settings, options) {
+    if (options.initialPageview) self.page();
   });
-  // Wrap any existing `onload` function with our own that will cache the
-  // loaded state of the page.
-  var oldonload = window.onload;
-  window.onload = function () {
-    self.loaded = true;
-    if (type(oldonload) === 'function') oldonload();
-  };
+
+  this.on('initialize', function () {
+    self._parseQuery();
+  });
+
 }
 
 
-// Add to the `Analytics` prototype.
-extend(Analytics.prototype, {
-
-  // Providers that can be initialized. Add using `this.addProvider`.
-  initializableProviders : {},
-
-  // Store the date when the page loaded, for services that depend on it.
-  date : new Date(),
-
-  // Store window.onload state so that analytics that rely on it can be loaded
-  // even after onload fires.
-  loaded : false,
-
-  // Whether analytics.js has been initialized with providers.
-  initialized : false,
-
-  // Whether all of our providers have loaded.
-  isReady : false,
-
-  // A queue for storing `ready` callback functions to get run when
-  // analytics have been initialized.
-  readyCallbacks : [],
-
-  // The amount of milliseconds to wait for requests to providers to clear
-  // before navigating away from the current page.
-  timeout : 300,
-
-  // Ability to access the user object.
-  // TODO: Should be removed eventually
-  user : user,
-
-  providers : [],
-
-  Provider : Provider,
-
-  // Adds a provider to the list of available providers that can be
-  // initialized.
-  addProvider : function (name, Provider) {
-    this.initializableProviders[name] = Provider;
-    // add the provider's name so that we can later match turned
-    // off providers to their context map position
-    Provider.prototype.name = name;
-  },
-
-
-  // Initialize
-  // ----------
-  // Call **initialize** to setup analytics.js before identifying or
-  // tracking any users or events. Here's what a call to **initialize**
-  // might look like:
-  //
-  //     analytics.initialize({
-  //         'Google Analytics' : 'UA-XXXXXXX-X',
-  //         'Segment.io'       : 'XXXXXXXXXXX',
-  //         'KISSmetrics'      : 'XXXXXXXXXXX'
-  //     });
-  //
-  // * `providers` is a dictionary of the providers you want to enabled.
-  // The keys are the names of the providers and their values are either
-  // an api key, or dictionary of extra settings (including the api key).
-  initialize : function (providers, options) {
-    var self = this;
-
-    // Reset our state.
-    this.providers = [];
-    this.initialized = false;
-    this.isReady = false;
-
-    // Set the user options, and load the user from our cookie.
-    user.options(options);
-    user.load();
-
-    // Create a ready method that will run after all of our providers have been
-    // initialized and loaded. We'll pass the function into each provider's
-    // initialize method, so they can callback when they've loaded successfully.
-    var ready = after(size(providers), function () {
-      self.isReady = true;
-      // Take each callback off the queue and call it.
-      var callback;
-      while(callback = self.readyCallbacks.shift()) {
-        callback();
-      }
-    });
-
-    // Initialize a new instance of each provider with their `options`, and
-    // copy the provider into `this.providers`.
-    each(providers, function (key, options) {
-      var Provider = self.initializableProviders[key];
-      if (!Provider) throw new Error('Could not find a provider named "'+key+'"');
-
-      self.providers.push(new Provider(options, ready));
-    });
-
-    // Identify/track any `ajs_uid` and `ajs_event` parameters in the URL.
-    var query = url.parse(window.location.href).query;
-    var queries = querystring.parse(query);
-    if (queries.ajs_uid) this.identify(queries.ajs_uid);
-    if (queries.ajs_event) this.track(queries.ajs_event);
-
-    // Update the initialized state that other methods rely on.
-    this.initialized = true;
-  },
-
-
-  // Ready
-  // -----
-  // Ready lets you pass in a callback that will get called when your
-  // analytics services have been initialized. It's like jQuery's `ready`
-  // expect for analytics instead of the DOM.
-  ready : function (callback) {
-    if (type(callback) !== 'function') return;
-
-    // If we're already initialized, do it right away. Otherwise, add it to the
-    // queue for when we do get initialized.
-    if (this.isReady) {
-      callback();
-    } else {
-      this.readyCallbacks.push(callback);
-    }
-  },
-
-
-  // Identify
-  // --------
-  // Identifying a user ties all of their actions to an ID you recognize
-  // and records properties about a user. An example identify:
-  //
-  //     analytics.identify('4d3ed089fb60ab534684b7e0', {
-  //         name  : 'Achilles',
-  //         email : 'achilles@segment.io',
-  //         age   : 23
-  //     });
-  //
-  // * `userId` (optional) is the ID you know the user by. Ideally this
-  // isn't an email, because the user might be able to change their email
-  // and you don't want that to affect your analytics.
-  //
-  // * `traits` (optional) is a dictionary of traits to tie your user.
-  // Things like `name`, `age` or `friendCount`. If you have them, you
-  // should always store a `name` and `email`.
-  //
-  // * `context` (optional) is a dictionary of options that provide more
-  // information to the providers about this identify.
-  //  * `providers` {optional}: a dictionary of provider names to a
-  //  boolean specifying whether that provider will receive this identify.
-  //
-  // * `callback` (optional) is a function to call after the a small
-  // timeout to give the identify requests a chance to be sent.
-  identify : function (userId, traits, context, callback) {
-    if (!this.initialized) return;
-
-    // Allow for not passing context, but passing a callback.
-    if (type(context) === 'function') {
-      callback = context;
-      context = null;
-    }
-
-    // Allow for not passing traits, but passing a callback.
-    if (type(traits) === 'function') {
-      callback = traits;
-      traits = null;
-    }
-
-    // Allow for identifying traits without setting a `userId`, for
-    // anonymous users whose traits you learn.
-    if (type(userId) === 'object') {
-      if (traits && type(traits) === 'function') callback = traits;
-      traits = userId;
-      userId = null;
-    }
-
-    // Use the saved userId.
-    if (userId === null) userId = user.id();
-
-    // Update the cookie with new userId and traits.
-    var alias = user.update(userId, traits);
-
-    // Call `identify` on all of our enabled providers that support it.
-    each(this.providers, function (provider) {
-      if (provider.identify && utils.isEnabled(provider, context)) {
-        var args = [userId, clone(traits), clone(context)];
-
-        if (provider.ready) provider.identify.apply(provider, args);
-        else provider.enqueue('identify', args);
-      }
-    });
-
-    // TODO: auto-alias once mixpanel API doesn't error
-    // If we should alias, go ahead and do it.
-    // if (alias) this.alias(userId);
-
-    if (callback && type(callback) === 'function') {
-      setTimeout(callback, this.timeout);
-    }
-  },
-
-
-  // Track
-  // -----
-  // Whenever a visitor triggers an event on your site that you're
-  // interested in, you'll want to track it. An example track:
-  //
-  //     analytics.track('Added a Friend', {
-  //         level  : 'hard',
-  //         volume : 11
-  //     });
-  //
-  // * `event` is the name of the event. The best names are human-readable
-  // so that your whole team knows what they mean when they analyze your
-  // data.
-  //
-  // * `properties` (optional) is a dictionary of properties of the event.
-  // Property keys are all camelCase (we'll alias to non-camelCase for
-  // you automatically for providers that require it).
-  //
-  // * `context` (optional) is a dictionary of options that provide more
-  // information to the providers about this track.
-  //  * `providers` {optional}: a dictionary of provider names to a
-  //  boolean specifying whether that provider will receive this track.
-  //
-  // * `callback` (optional) is a function to call after the a small
-  // timeout to give the track requests a chance to be sent.
-  track : function (event, properties, context, callback) {
-    if (!this.initialized) return;
-
-    // Allow for not passing context, but passing a callback.
-    if (type(context) === 'function') {
-      callback = context;
-      context = null;
-    }
-
-    // Allow for not passing properties, but passing a callback.
-    if (type(properties) === 'function') {
-      callback = properties;
-      properties = null;
-    }
-
-    // Call `track` on all of our enabled providers that support it.
-    each(this.providers, function (provider) {
-      if (provider.track && utils.isEnabled(provider, context)) {
-        var args = [event, clone(properties), clone(context)];
-
-        if (provider.ready) provider.track.apply(provider, args);
-        else provider.enqueue('track', args);
-      }
-    });
-
-    if (callback && type(callback) === 'function') {
-      setTimeout(callback, this.timeout);
-    }
-  },
-
-
-  // ### trackLink
-  // A helper for tracking outbound links that would normally leave the
-  // page before the track calls went out. It works by wrapping the calls
-  // in as short of a timeout as possible to fire the track call, because
-  // [response times matter](http://theixdlibrary.com/pdf/Miller1968.pdf).
-  //
-  // * `links` is either a single link DOM element, or an array of link
-  // elements like jQuery gives you.
-  //
-  // * `event` and `properties` are passed directly to `analytics.track`
-  // and take the same options. `properties` can also be a function that
-  // will get passed the link that was clicked, and should return a
-  // dictionary of event properties.
-  trackLink : function (links, event, properties) {
-    if (!links) return;
-
-    // Turn a single link into an array so that we're always handling
-    // arrays, which allows for passing jQuery objects.
-    if (utils.isElement(links)) links = [links];
-
-    var self  = this;
-
-    // Bind to all the links in the array.
-    each(links, function (el) {
-
-      bind(el, 'click', function (e) {
-
-        // Allow for properties to be a function. And pass it the
-        // link element that was clicked.
-        if (type(properties) === 'function') properties = properties(el);
-
-        // Fire a normal track call.
-        self.track(event, properties);
-
-        // To justify us preventing the default behavior we must:
-        //
-        // * Have an `href` to use.
-        // * Not have a `target="_blank"` attribute.
-        // * Not have any special keys pressed, because they might
-        // be trying to open in a new tab, or window, or download
-        // the asset.
-        //
-        // This might not cover all cases, but we'd rather throw out
-        // an event than miss a case that breaks the experience.
-        if (el.href && el.target !== '_blank' && !utils.isMeta(e)) {
-
-          // Prevent the link's default redirect in all the sane
-          // browsers, and also IE.
-          if (e.preventDefault)
-            e.preventDefault();
-          else
-            e.returnValue = false;
-
-          // Navigate to the url after a small timeout, giving the
-          // providers time to track the event.
-          setTimeout(function () {
-            window.location.href = el.href;
-          }, self.timeout);
-        }
-      });
-    });
-  },
-
-
-  // ### trackForm
-  // Similar to `trackClick`, this is a helper for tracking form
-  // submissions that would normally leave the page before a track call
-  // can be sent. It works by preventing the default submit, sending a
-  // track call, and then submitting the form programmatically.
-  //
-  // * `forms` is either a single form DOM element, or an array of
-  // form elements like jQuery gives you.
-  //
-  // * `event` and `properties` are passed directly to `analytics.track`
-  // and take the same options. `properties` can also be a function that
-  // will get passed the form that was submitted, and should return a
-  // dictionary of event properties.
-  trackForm : function (form, event, properties) {
-    if (!form) return;
-
-    // Turn a single element into an array so that we're always handling arrays,
-    // which allows for passing jQuery objects.
-    if (utils.isElement(form)) form = [form];
-
-    var self = this;
-
-    each(form, function (el) {
-      var handler = function (e) {
-        // Allow for properties to be a function. And pass it the form element
-        // that was submitted.
-        if (type(properties) === 'function') properties = properties(el);
-
-        // Fire a normal track call.
-        self.track(event, properties);
-
-        // Prevent the form's default submit in all sane browsers, and IE.
-        if (e.preventDefault)
-          e.preventDefault();
-        else
-          e.returnValue = false;
-
-        // Submit the form after a small timeout, giving the event time to fire.
-        setTimeout(function () {
-          el.submit();
-        }, self.timeout);
-      };
-
-      // Support the form being submitted via jQuery instead of for real. This
-      // doesn't happen automatically because `el.submit()` doesn't actually
-      // fire submit handlers, which is what jQuery has to user internally. >_<
-      var dom = window.jQuery || window.Zepto;
-      if (dom)
-        dom(el).submit(handler);
-      else
-        bind(el, 'submit', handler);
-    });
-  },
-
-
-  // Pageview
-  // --------
-  // For single-page applications where real page loads don't happen, the
-  // **pageview** method simulates a page loading event for all providers
-  // that track pageviews and support it. This is the equivalent of
-  // calling `_gaq.push(['trackPageview'])` in Google Analytics.
-  //
-  // **pageview** is _not_ for sending events about which pages in your
-  // app the user has loaded. For that, use a regular track call like:
-  // `analytics.track('View Signup Page')`. Or, if you think you've come
-  // up with a badass abstraction, submit a pull request!
-  //
-  // * `url` (optional) is the url path that you want to be associated
-  // with the page. You only need to pass this argument if the URL hasn't
-  // changed but you want to register a new pageview.
-  pageview : function (url) {
-    if (!this.initialized) return;
-
-    // Call `pageview` on all of our enabled providers that support it.
-    each(this.providers, function (provider) {
-      if (provider.pageview) {
-        if (provider.ready) provider.pageview(url);
-        else provider.enqueue('pageview', [url]);
-      }
-    });
-  },
-
-
-  // Alias
-  // -----
-  // Alias combines two previously unassociated user identities. This
-  // comes in handy if the same user visits from two different devices and
-  // you want to combine their history. Some providers also don't alias
-  // automatically for you when an anonymous user signs up (like
-  // Mixpanel), so you need to call `alias` manually right after sign up
-  // with their brand new `userId`.
-  //
-  // * `newId` is the new ID you want to associate the user with.
-  //
-  // * `originalId` (optional) is the original ID that the user was
-  // recognized by. This defaults to the currently identified user's ID if
-  // there is one. In most cases you don't need to pass this argument.
-  alias : function (newId, originalId) {
-    if (!this.initialized) return;
-
-    // Call `alias` on all of our enabled providers that support it.
-    each(this.providers, function (provider) {
-      if (provider.alias) {
-        if (provider.ready) provider.alias(newId, originalId);
-        else provider.enqueue('alias', [newId, originalId]);
-      }
-    });
-  }
-
-});
-
-
-// Alias `trackClick` and `trackSubmit` for backwards compatibility.
-Analytics.prototype.trackClick = Analytics.prototype.trackLink;
-Analytics.prototype.trackSubmit = Analytics.prototype.trackForm;
-
-});
-require.register("analytics/src/provider.js", function(exports, require, module){
-var each   = require('each')
-  , extend = require('extend')
-  , type   = require('type');
-
-
-module.exports = Provider;
-
-
-function Provider (options, ready) {
+/**
+ * Event Emitter.
+ */
+
+Emitter(Analytics.prototype);
+
+
+/**
+ * Use a `plugin`.
+ *
+ * @param {Function} plugin
+ * @return {Analytics}
+ */
+
+Analytics.prototype.use = function (plugin) {
+  plugin(this);
+  return this;
+};
+
+
+/**
+ * Define a new `Integration`.
+ *
+ * @param {Function} Integration
+ * @return {Analytics}
+ */
+
+Analytics.prototype.addIntegration = function (Integration) {
+  var name = Integration.prototype.name;
+  if (!name) throw new TypeError('attempted to add an invalid integration');
+  this.Integrations[name] = Integration;
+  return this;
+};
+
+
+/**
+ * Initialize with the given integration `settings` and `options`. Aliased to
+ * `init` for convenience.
+ *
+ * @param {Object} settings
+ * @param {Object} options (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.init =
+Analytics.prototype.initialize = function (settings, options) {
+  settings = settings || {};
+  options = options || {};
+
+  this._options(options);
+  this._readied = false;
+  this._integrations = {};
+
+  // load user now that options are set
+  user.load();
+  group.load();
+
+  // clean unknown integrations from settings
   var self = this;
-  // Set up a queue of { method : 'identify', args : [] } to call
-  // once we are ready.
-  this.queue = [];
-  this.ready = false;
+  each(settings, function (name) {
+    var Integration = self.Integrations[name];
+    if (!Integration) delete settings[name];
+  });
 
-  // Allow for `options` to only be a string if the provider has specified
-  // a default `key`, in which case convert `options` into a dictionary.
-  if (type(options) !== 'object') {
-    if (type(options) === 'string' && this.key) {
-      var key = options;
-      options = {};
-      options[this.key] = key;
-    } else {
-      throw new Error('Could not resolve options.');
+  // make ready callback
+  var ready = after(size(settings), function () {
+    self._readied = true;
+    self.emit('ready');
+  });
+
+  // initialize integrations, passing ready
+  each(settings, function (name, opts) {
+    var Integration = self.Integrations[name];
+    if (options.initialPageview && opts.initialPageview === false) {
+      Integration.prototype.page = after(2, Integration.prototype.page);
     }
-  }
-  // Extend the options passed in with the provider's defaults.
-  extend(this.options, options);
 
-  // Wrap our ready function to first read from the queue.
-  var dequeue = function () {
-    each(self.queue, function (call) {
-      var method = call.method
-        , args   = call.args;
-      self[method].apply(self, args);
+    var integration = new Integration(clone(opts));
+    integration.once('ready', ready);
+    integration.initialize();
+    self._integrations[name] = integration;
+  });
+
+  // backwards compat with angular plugin.
+  // TODO: remove
+  this.initialized = true;
+
+  this.emit('initialize', settings, options);
+  return this;
+};
+
+
+/**
+ * Identify a user by optional `id` and `traits`.
+ *
+ * @param {String} id (optional)
+ * @param {Object} traits (optional)
+ * @param {Object} options (optional)
+ * @param {Function} fn (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.identify = function (id, traits, options, fn) {
+  if (is.fn(options)) fn = options, options = null;
+  if (is.fn(traits)) fn = traits, options = null, traits = null;
+  if (is.object(id)) options = traits, traits = id, id = user.id();
+
+  user.identify(id, traits);
+
+  // clone traits before we manipulate so we don't do anything uncouth, and take
+  // from `user` so that we carryover anonymous traits
+  id = user.id();
+  traits = cleanTraits(id, user.traits());
+
+  this._invoke('identify', id, traits, options);
+  this._callback(fn);
+  return this;
+};
+
+
+/**
+ * Return the current user.
+ *
+ * @return {Object}
+ */
+
+Analytics.prototype.user = function () {
+  return user;
+};
+
+
+/**
+ * Identify a group by optional `id` and `properties`. Or, if no arguments are
+ * supplied, return the current group.
+ *
+ * @param {String} id (optional)
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ * @param {Function} fn (optional)
+ * @return {Analytics or Object}
+ */
+
+Analytics.prototype.group = function (id, properties, options, fn) {
+  if (0 === arguments.length) return group;
+  if (is.fn(options)) fn = options, options = null;
+  if (is.fn(properties)) fn = properties, options = null, properties = null;
+  if (is.object(id)) options = properties, properties = id, id = group.id();
+
+  group.identify(id, properties);
+
+  // grab from group again to make sure we're taking from the source
+  id = group.id();
+  properties = group.properties();
+
+  // convert a create date to a date
+  if (properties.created) properties.created = newDate(properties.created);
+
+  this._invoke('group', id, properties, options);
+  this._callback(fn);
+  return this;
+};
+
+
+/**
+ * Track an `event` that a user has triggered with optional `properties`.
+ *
+ * @param {String} event
+ * @param {Object} properties (optional)
+ * @param {Object} options (optional)
+ * @param {Function} fn (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.track = function (event, properties, options, fn) {
+  if (is.fn(options)) fn = options, options = null;
+  if (is.fn(properties)) fn = properties, options = null, properties = null;
+
+  properties = traverse(clone(properties)) || {};
+
+  this._invoke('track', event, properties, options);
+  this._callback(fn);
+  return this;
+};
+
+
+/**
+ * Helper method to track an outbound link that would normally navigate away
+ * from the page before the analytics calls were sent.
+ *
+ * BACKWARDS COMPATIBILITY: aliased to `trackClick`.
+ *
+ * @param {Element or Array} links
+ * @param {String or Function} event
+ * @param {Object or Function} properties (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.trackClick =
+Analytics.prototype.trackLink = function (links, event, properties) {
+  if (!links) return this;
+  if (is.element(links)) links = [links]; // always arrays, handles jquery
+
+  var self = this;
+  each(links, function (el) {
+    on(el, 'click', function (e) {
+      var ev = is.fn(event) ? event(el) : event;
+      var props = is.fn(properties) ? properties(el) : properties;
+      self.track(ev, props);
+
+      if (el.href && el.target !== '_blank' && !isMeta(e)) {
+        prevent(e);
+        self._callback(function () {
+          window.location.href = el.href;
+        });
+      }
     });
-    self.ready = true;
-    self.queue = [];
-    ready();
-  };
+  });
 
-  // Call the provider's initialize object.
-  this.initialize.call(this, this.options, dequeue);
+  return this;
+};
+
+
+/**
+ * Helper method to track an outbound form that would normally navigate away
+ * from the page before the analytics calls were sent.
+ *
+ * BACKWARDS COMPATIBILITY: aliased to `trackSubmit`.
+ *
+ * @param {Element or Array} forms
+ * @param {String or Function} event
+ * @param {Object or Function} properties (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.trackSubmit =
+Analytics.prototype.trackForm = function (forms, event, properties) {
+  if (!forms) return this;
+  if (is.element(forms)) forms = [forms]; // always arrays, handles jquery
+
+  var self = this;
+  each(forms, function (el) {
+    function handler (e) {
+      prevent(e);
+
+      var ev = is.fn(event) ? event(el) : event;
+      var props = is.fn(properties) ? properties(el) : properties;
+      self.track(ev, props);
+
+      self._callback(function () {
+        el.submit();
+      });
+    }
+
+    // support the events happening through jQuery or Zepto instead of through
+    // the normal DOM API, since `el.submit` doesn't bubble up events...
+    var $ = window.jQuery || window.Zepto;
+    if ($) {
+      $(el).submit(handler);
+    } else {
+      on(el, 'submit', handler);
+    }
+  });
+
+  return this;
+};
+
+
+/**
+ * Trigger a pageview, labeling the current page with an optional `category`,
+ * `name` and `properties`.
+ *
+ * @param {String} category (optional)
+ * @param {String} name (optional)
+ * @param {Object or String} properties (or path) (optional)
+ * @param {Object} options (optional)
+ * @param {Function} fn (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.page = function (category, name, properties, options, fn) {
+  if (is.fn(options)) fn = options, options = null;
+  if (is.fn(properties)) fn = properties, options = properties = null;
+  if (is.fn(name)) fn = name, options = properties = name = null;
+  if (is.object(name)) options = properties, properties = name, name = null;
+  if (is.object(category)) options = properties, properties = name, name = category = null;
+  if (is.string(category) && !is.string(name)) name = category, category = null;
+
+  properties = clone(properties) || {};
+  defaults(properties, {
+    path: canonicalPath(),
+    referrer: document.referrer,
+    title: document.title,
+    url: location.href
+  });
+
+  this._invoke('page', category, name, properties, options);
+  this._callback(fn);
+  return this;
+};
+
+
+/**
+ * BACKWARDS COMPATIBILITY: convert an old `pageview` to a `page` call.
+ *
+ * @param {String} url (optional)
+ * @param {Object} options (optional)
+ * @return {Analytics}
+ * @api private
+ */
+
+Analytics.prototype.pageview = function (url, options) {
+  var properties = {};
+  if (url) properties.path = url;
+  this.page(properties);
+  return this;
+};
+
+
+/**
+ * Merge two previously unassociated user identities.
+ *
+ * @param {String} to
+ * @param {String} from (optional)
+ * @param {Object} options (optional)
+ * @param {Function} fn (optional)
+ * @return {Analytics}
+ */
+
+Analytics.prototype.alias = function (to, from, options, fn) {
+  if (is.fn(options)) fn = options, options = null;
+  if (is.fn(from)) fn = from, options = null, from = null;
+  if (is.object(from)) options = from, from = null;
+  this._invoke('alias', to, from, options);
+  this._callback(fn);
+  return this;
+};
+
+
+/**
+ * Register a `fn` to be fired when all the analytics services are ready.
+ *
+ * @param {Function} fn
+ * @return {Analytics}
+ */
+
+Analytics.prototype.ready = function (fn) {
+  if (!is.fn(fn)) return this;
+  this._readied
+    ? callback.async(fn)
+    : this.once('ready', fn);
+  return this;
+};
+
+
+/**
+ * Set the `timeout` (in milliseconds) used for callbacks.
+ *
+ * @param {Number} timeout
+ */
+
+Analytics.prototype.timeout = function (timeout) {
+  this._timeout = timeout;
+};
+
+
+/**
+ * Enable or disable debug.
+ *
+ * @param {String or Boolean} str
+ */
+
+Analytics.prototype.debug = function(str){
+  if (0 == arguments.length || str) {
+    debug.enable('analytics:' + (str || '*'));
+  } else {
+    debug.disable();
+  }
+};
+
+
+/**
+ * Apply options.
+ *
+ * @param {Object} options
+ * @return {Analytics}
+ * @api private
+ */
+
+Analytics.prototype._options = function (options) {
+  options = options || {};
+  cookie.options(options.cookie);
+  store.options(options.localStorage);
+  user.options(options.user);
+  group.options(options.group);
+  return this;
+};
+
+
+/**
+ * Callback a `fn` after our defined timeout period.
+ *
+ * @param {Function} fn
+ * @return {Analytics}
+ * @api private
+ */
+
+Analytics.prototype._callback = function (fn) {
+  callback.async(fn, this._timeout);
+  return this;
+};
+
+
+/**
+ * Call a `method` on all of initialized integrations, passing clones of arguments
+ * along to keep each integration isolated.
+ *
+ * TODO: check integration enabled
+ *
+ * @param {String} method
+ * @param {Mixed} args...
+ * @return {Analytics}
+ * @api private
+ */
+
+Analytics.prototype._invoke = function () {
+  var args = [].slice.call(arguments);
+  var options = args[args.length-1]; // always the last one
+
+  each(this._integrations, function (name, integration) {
+    if (!isEnabled(integration, options)) return;
+    integration.invoke.apply(integration, clone(args));
+  });
+
+  this.emit.apply(this, clone(args));
+  return this;
+};
+
+
+/**
+ * Parse the query string for callable methods.
+ *
+ * @return {Analytics}
+ * @api private
+ */
+
+Analytics.prototype._parseQuery = function () {
+  // Identify and track any `ajs_uid` and `ajs_event` parameters in the URL.
+  var q = querystring.parse(window.location.search);
+  if (q.ajs_uid) this.identify(q.ajs_uid);
+  if (q.ajs_event) this.track(q.ajs_event);
+  return this;
+};
+
+
+/**
+ * Determine whether a `integration` is enabled or not based on `options`.
+ *
+ * @param {Object} integration
+ * @param {Object} options
+ * @return {Boolean}
+ */
+
+function isEnabled (integration, options) {
+  var enabled = true;
+  if (!options || !options.providers) return enabled;
+
+  // Default to the 'all' or 'All' setting.
+  var map = options.providers;
+  if (map.all !== undefined) enabled = map.all;
+  if (map.All !== undefined) enabled = map.All;
+
+  // Look for this integration's specific setting.
+  var name = integration.name;
+  if (map[name] !== undefined) enabled = map[name];
+
+  return enabled;
 }
 
 
-// Helper to add provider methods to the prototype chain, for adding custom
-// providers. Modeled after [Backbone's `extend` method](https://github.com/documentcloud/backbone/blob/master/backbone.js#L1464).
-Provider.extend = function (properties) {
-  var parent = this;
-  var child = function () { return parent.apply(this, arguments); };
-  var Surrogate = function () { this.constructor = child; };
-  Surrogate.prototype = parent.prototype;
-  child.prototype = new Surrogate();
-  extend(child.prototype, properties);
-  return child;
-};
+/**
+ * Clean up traits, default some useful things both so the user doesn't have to
+ * and so we don't have to do it on a integration-basis.
+ *
+ * @param {Object} traits
+ * @return {Object}
+ */
 
+function cleanTraits (userId, traits) {
+  // Add the `email` trait if it doesn't exist and the `userId` is an email.
+  if (!traits.email && isEmail(userId)) traits.email = userId;
 
-// Add to the default Provider prototype.
-extend(Provider.prototype, {
-
-  // Override this with any default options.
-  options : {},
-
-  // Override this if our provider only needs a single API key to
-  // initialize itself, in which case we can use the terse initialization
-  // syntax:
-  //
-  //     analytics.initialize({
-  //       'Provider' : 'XXXXXXX'
-  //     });
-  //
-  key : undefined,
-
-  // Override to provider your own initialization logic, usually a snippet
-  // and loading a Javascript library.
-  initialize : function (options, ready) {
-    ready();
-  },
-
-  /**
-   * Adds an item to the queue
-   * @param  {String} method ('track' or 'identify')
-   * @param  {Object} args
-   */
-  enqueue : function (method, args) {
-    this.queue.push({
-      method : method,
-      args : args
-    });
+  // Create the `name` trait if it doesn't exist and `firstName` and `lastName`
+  // are both supplied.
+  if (!traits.name && traits.firstName && traits.lastName) {
+    traits.name = traits.firstName + ' ' + traits.lastName;
   }
-});
-});
-require.register("analytics/src/user.js", function(exports, require, module){
 
-var cookieStore = require('cookie')
-  , clone       = require('clone')
-  , extend      = require('extend')
-  , json        = require('json')
-  , type        = require('type');
-
-
-var user   = newUser();
-
-var cookie = exports.cookie = {
-  name    : 'ajs_user',
-  maxage  : 31536000000, // default to a year
-  enabled : true,
-  path    : '/',
-};
-
-
-/**
- * Set the options for our user storage.
- * @param  {Object} options
- *   @field {Boolean|Object} cookie - whether to use a cookie
- *     @field {String}  name   - what to call the cookie ('ajs_user')
- *     @field {Number}  maxage - time in ms to keep the cookie. (one year)
- *     @field {
- */
-exports.options = function (options) {
-
-  options || (options = {});
-
-  if (type(options.cookie) === 'boolean') {
-
-    cookie.enabled = options.cookie;
-
-  } else if (type(options.cookie) === 'object') {
-    cookie.enabled = true;
-    if (options.cookie.name)   cookie.name   = options.cookie.name;
-    if (options.cookie.maxage) cookie.maxage = options.cookie.maxage;
-    if (options.cookie.domain) cookie.domain = options.cookie.domain;
-    if (options.cookie.path)   cookie.path   = options.cookie.path;
-
-    if (cookie.domain && cookie.domain.charAt(0) !== '.')
-      cookie.domain = '.' + cookie.domain;
+  // Convert dates from more types of input into Date objects.
+  if (traits.created) traits.created = newDate(traits.created);
+  if (traits.company && traits.company.created) {
+    traits.company.created = newDate(traits.company.created);
   }
-};
 
-
-exports.id = function () {
-  return user.id;
-};
-
-
-exports.traits = function () {
-  return clone(user.traits);
-};
+  return traits;
+}
 
 
 /**
- * Updates the stored user with id and trait information
- * @param  {String}  userId
- * @param  {Object}  traits
- * @return {Boolean} whether alias should be called
+ * Return the canonical path for the page.
+ *
+ * @return {String}
  */
-exports.update = function (userId, traits) {
 
-  // Make an alias call if there was no previous userId, there is one
-  // now, and we are using a cookie between page loads.
-  var alias = !user.id && userId && cookie.enabled;
+function canonicalPath () {
+  var canon = canonical();
+  if (!canon) return window.location.pathname;
+  var parsed = url.parse(canon);
+  return parsed.pathname;
+}
+});
+require.register("analytics/lib/cookie.js", function(exports, require, module){
 
-  traits || (traits = {});
-
-  // If there is a current user and the new user isn't the same,
-  // we want to just replace their traits. Otherwise extend.
-  if (user.id && userId && user.id !== userId) user.traits = traits;
-  else extend(user.traits, traits);
-
-  if (userId) user.id = userId;
-
-  if (cookie.enabled) save(user);
-
-  return alias;
-};
+var bind = require('bind');
+var cookie = require('cookie');
+var clone = require('clone');
+var defaults = require('defaults');
+var json = require('json');
+var topDomain = require('top-domain');
 
 
 /**
- * Clears the user, wipes the cookie.
+ * Initialize a new `Cookie` with `options`.
+ *
+ * @param {Object} options
  */
-exports.clear = function () {
-  if (cookie.enabled) cookieStore(cookie.name, null, clone(cookie));
-  user = newUser();
+
+function Cookie (options) {
+  this.options(options);
+}
+
+
+/**
+ * Get or set the cookie options.
+ *
+ * @param {Object} options
+ *   @field {Number} maxage (1 year)
+ *   @field {String} domain
+ *   @field {String} path
+ *   @field {Boolean} secure
+ */
+
+Cookie.prototype.options = function (options) {
+  if (arguments.length === 0) return this._options;
+
+  options = options || {};
+
+  var domain = '.' + topDomain(window.location.href);
+
+  // localhost cookies are special: http://curl.haxx.se/rfc/cookie_spec.html
+  if (domain === '.localhost') domain = '';
+
+  defaults(options, {
+    maxage: 31536000000, // default to a year
+    path: '/',
+    domain: domain
+  });
+
+  this._options = options;
 };
 
 
 /**
- * Save the user object to a cookie
- * @param  {Object}  user
+ * Set a `key` and `value` in our cookie.
+ *
+ * @param {String} key
+ * @param {Object} value
  * @return {Boolean} saved
  */
-var save = function (user) {
+
+Cookie.prototype.set = function (key, value) {
   try {
-    cookieStore(cookie.name, json.stringify(user), clone(cookie));
+    value = json.stringify(value);
+    cookie(key, value, clone(this._options));
     return true;
   } catch (e) {
     return false;
@@ -2062,1870 +5058,907 @@ var save = function (user) {
 
 
 /**
- * Load the data from our cookie.
+ * Get a value from our cookie by `key`.
  *
- * @return {Object}
- *   @field {String} id
- *   @field {Object} traits
+ * @param {String} key
+ * @return {Object} value
  */
-exports.load = function () {
 
-  if (!cookie.enabled) return user;
-
-  var storedUser = cookieStore(cookie.name);
-
-  if (storedUser) {
-    try {
-      user = json.parse(storedUser);
-    } catch (e) {
-      // if we got bad json, toss the entire thing.
-      user = newUser();
-    }
+Cookie.prototype.get = function (key) {
+  try {
+    var value = cookie(key);
+    value = value ? json.parse(value) : null;
+    return value;
+  } catch (e) {
+    return null;
   }
-
-  return user;
 };
 
 
 /**
- * Returns a new user object
+ * Remove a value from our cookie by `key`.
+ *
+ * @param {String} key
+ * @return {Boolean} removed
  */
-function newUser() {
-  return {
-    id     : null,
-    traits : {}
-  };
-}
-});
-require.register("analytics/src/utils.js", function(exports, require, module){
 
-var type  = require('type')
-  , each  = require('each')
-  , clone = require('clone');
-
-
-exports.clone = clone;
-
-// A helper to alias certain object's keys to different key names.
-// Useful for abstracting over providers that require specific key
-// names.
-exports.alias = function (obj, aliases) {
-  if (isObject(obj)) return;
-
-  each(aliases, function (property, alias) {
-    if (obj[property] !== undefined) {
-      obj[alias] = obj[property];
-      delete obj[property];
-    }
-  });
-};
-
-
-// Attach an event handler to a DOM element, even in IE.
-exports.bind = function (el, event, callback) {
-  if (el.addEventListener) {
-    el.addEventListener(event, callback, false);
-  } else if (el.attachEvent) {
-    el.attachEvent('on' + event, callback);
-  }
-};
-
-// Given a DOM event, tell us whether a meta key or button was
-// pressed that would make a link open in a new tab, window,
-// start a download, or anything else that wouldn't take the user to
-// a new page.
-exports.isMeta = function (e) {
-    if (e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return true;
-
-    // Logic that handles checks for the middle mouse button, based
-    // on [jQuery](https://github.com/jquery/jquery/blob/master/src/event.js#L466).
-    var which = e.which, button = e.button;
-    if (!which && button !== undefined) {
-        return (!button & 1) && (!button & 2) && (button & 4);
-    } else if (which === 2) {
-        return true;
-    }
-
+Cookie.prototype.remove = function (key) {
+  try {
+    cookie(key, null, clone(this._options));
+    return true;
+  } catch (e) {
     return false;
+  }
 };
 
-// Given a timestamp, return its value in seconds. For providers
-// that rely on Unix time instead of millis.
-exports.getSeconds = function (time) {
-  return Math.floor((+(new Date(time))) / 1000);
-};
 
-// A helper to extend objects with properties from other objects.
-// Based off of the [underscore](https://github.com/documentcloud/underscore/blob/master/underscore.js#L763)
-// method.
-exports.extend = function (obj) {
-  if (!isObject(obj)) return;
+/**
+ * Expose the cookie singleton.
+ */
 
-  var args = Array.prototype.slice.call(arguments, 1);
-  each(args, function (source) {
-    if (!isObject(source)) return;
+module.exports = bind.all(new Cookie());
 
-    each(source, function (key, property) {
-      obj[key] = property;
-    });
+
+/**
+ * Expose the `Cookie` constructor.
+ */
+
+module.exports.Cookie = Cookie;
+});
+require.register("analytics/lib/group.js", function(exports, require, module){
+
+var debug = require('debug')('analytics:group');
+var bind = require('bind');
+var clone = require('clone');
+var cookie = require('./cookie');
+var defaults = require('defaults');
+var extend = require('extend');
+var store = require('./store');
+var traverse = require('isodate-traverse');
+
+
+/**
+ * Initialize a new `Group` with `options`.
+ *
+ * @param {Object} options
+ */
+
+function Group (options) {
+  this.options(options);
+  this.id(null);
+  this.properties({});
+}
+
+
+/**
+ * Get or set storage `options`.
+ *
+ * @param {Object} options
+ *   @property {Object} cookie
+ *   @property {Object} localStorage
+ *   @property {Boolean} persist (default: `true`)
+ */
+
+Group.prototype.options = function (options) {
+  if (arguments.length === 0) return this._options;
+  options || (options = {});
+
+  defaults(options, {
+    persist: true,
+    cookie: {
+      key: 'ajs_group_id'
+    },
+    localStorage: {
+      key: 'ajs_group_properties'
+    }
   });
 
-  return obj;
-};
-
-// Type detection helpers, copied from
-// [underscore](https://github.com/documentcloud/underscore/blob/master/underscore.js#L926-L946).
-exports.isElement = function(obj) {
-  return !!(obj && obj.nodeType === 1);
+  this._options = options;
 };
 
 
-exports.isArray = Array.isArray || function (obj) {
-  return Object.prototype.toString.call(obj) === '[object Array]';
-};
+/**
+ * Get or set the group's `id`.
+ *
+ * @param {String} id
+ */
 
-var isObject = exports.isObject = function (obj) {
-  return obj === Object(obj);
-};
-
-var isString = exports.isString = function (obj) {
-  return Object.prototype.toString.call(obj) === '[object String]';
-};
-
-exports.isFunction = function (obj) {
-  return Object.prototype.toString.call(obj) === '[object Function]';
-};
-
-exports.isNumber = function (obj) {
-  return Object.prototype.toString.call(obj) === '[object Number]';
-};
-
-var isBoolean = exports.isBoolean = function(obj) {
-  return obj === true || obj === false || toString.call(obj) == '[object Boolean]';
-};
-
-// Email detection helper to loosely validate emails.
-exports.isEmail = function (string) {
-  return (/.+\@.+\..+/).test(string);
-};
-
-
-// A helper to resolve a settings object. It allows for `settings`
-// to be a string in the case of using the shorthand where just an
-// api key is passed. `fieldName` is what the provider calls their
-// api key.
-exports.resolveSettings = function (settings, fieldName) {
-  if (!isString(settings) && !isObject(settings))
-      throw new Error('Could not resolve settings.');
-  if (!fieldName)
-      throw new Error('You must provide an api key field name.');
-
-  // Allow for settings to just be an API key, for example:
-  //
-  //     { 'Google Analytics : 'UA-XXXXXXX-X' }
-  if (isString(settings)) {
-      var apiKey = settings;
-      settings = {};
-      settings[fieldName] = apiKey;
-  }
-
-  return settings;
-};
-
-// A helper to track events based on the 'anjs' url parameter
-exports.getUrlParameter = function (urlSearchParameter, paramKey) {
-  var params = urlSearchParameter.replace('?', '').split('&');
-  for (var i = 0; i < params.length; i += 1) {
-    var param = params[i].split('=');
-    if (param.length === 2 && param[0] === paramKey) {
-      return decodeURIComponent(param[1]);
-    }
+Group.prototype.id = function (id) {
+  switch (arguments.length) {
+    case 0: return this._getId();
+    case 1: return this._setId(id);
   }
 };
 
-// Uses the context to determine if a provider is enabled
-exports.isEnabled = function (provider, context) {
-  // if there is no context, then the provider is enabled
-  if (!isObject(context)) return true;
-  if (!isObject(context.providers)) return true;
 
-  var map = context.providers;
+/**
+ * Get the group's id.
+ *
+ * @return {String}
+ */
 
-  // determine the default provider setting
-  // if the user passes "all" or "All" : false
-  // then the provider is disabled unless told otherwise
-  var all = true;
-  if (isBoolean(map.all)) all = map.all;
-  if (isBoolean(map.All)) all = map.All;
-
-  if (isBoolean(map[provider.name]))
-      return map[provider.name];
-  else
-      return all;
+Group.prototype._getId = function () {
+  var ret = this._options.persist
+    ? cookie.get(this._options.cookie.key)
+    : this._id;
+  return ret === undefined ? null : ret;
 };
-});
-require.register("analytics/src/providers/bitdeli.js", function(exports, require, module){
-// Bitdeli
-// -------
-// * [Documentation](https://bitdeli.com/docs)
-// * [JavaScript API Reference](https://bitdeli.com/docs/javascript-api.html)
-
-var Provider = require('../provider')
-  , type     = require('type')
-  , extend   = require('extend')
-  , load     = require('load-script');
 
 
-module.exports = Provider.extend({
+/**
+ * Set the group's `id`.
+ *
+ * @param {String} id
+ */
 
-  options : {
-    // BitDeli requires two options: `inputId` and `authToken`.
-    inputId : null,
-    authToken : null,
-    // Whether or not to track an initial pageview when the page first
-    // loads. You might not want this if you're using a single-page app.
-    initialPageview : true
-  },
-
-
-  initialize : function (options, ready) {
-    window._bdq = window._bdq || [];
-    window._bdq.push(["setAccount", options.inputId, options.authToken]);
-
-    if (options.initialPageview) this.pageview();
-
-    load('//d2flrkr957qc5j.cloudfront.net/bitdeli.min.js');
-
-    // Bitdeli just uses a queue, so it's ready right away.
-    ready();
-  },
-
-
-  // Bitdeli uses two separate methods: `identify` for storing the `userId`
-  // and `set` for storing `traits`.
-  identify : function (userId, traits) {
-    if (userId) window._bdq.push(['identify', userId]);
-    if (traits) window._bdq.push(['set', traits]);
-  },
-
-
-  track : function (event, properties) {
-    window._bdq.push(['track', event, properties]);
-  },
-
-
-  // If `url` is undefined, Bitdeli uses the current page URL instead.
-  pageview : function (url) {
-    window._bdq.push(['trackPageview', url]);
+Group.prototype._setId = function (id) {
+  if (this._options.persist) {
+    cookie.set(this._options.cookie.key, id);
+  } else {
+    this._id = id;
   }
-
-});
-});
-require.register("analytics/src/providers/chartbeat.js", function(exports, require, module){
-// Chartbeat
-// ---------
-// [Documentation](http://chartbeat.com/docs/adding_the_code/),
-// [documentation](http://chartbeat.com/docs/configuration_variables/),
-// [documentation](http://chartbeat.com/docs/handling_virtual_page_changes/).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-var loadTime = new Date();
-
-module.exports = Provider.extend({
-
-  options : {
-    // Chartbeat requires two options: `domain` and `uid`. All other
-    // configuration options are passed straight in!
-    domain : null,
-    uid    : null
-  },
+};
 
 
-  initialize : function (options, ready) {
-    // Since all the custom options just get passed through, update the
-    // Chartbeat `_sf_async_config` variable with options.
-    window._sf_async_config = options;
-    // Use the stored date from when we were loaded.
-    window._sf_endpt = loadTime.getTime();
+/**
+ * Get or set the group's `properties`.
+ *
+ * @param {String} properties
+ */
 
-    load({
-      https : 'https://a248.e.akamai.net/chartbeat.download.akamai.com/102508/js/chartbeat.js',
-      http  : 'http://static.chartbeat.com/js/chartbeat.js'
-    }, ready);
-  },
-
-
-  pageview : function (url) {
-    // In case the Chartbeat library hasn't loaded yet.
-    if (!window.pSUPERFLY) return;
-
-    // Requires a path, so default to the current one.
-    window.pSUPERFLY.virtualPage(url || window.location.pathname);
+Group.prototype.properties = function (properties) {
+  switch (arguments.length) {
+    case 0: return this._getProperties();
+    case 1: return this._setProperties(properties);
   }
-
-});
-});
-require.register("analytics/src/providers/clicky.js", function(exports, require, module){
-// Clicky
-// ------
-// [Documentation](http://clicky.com/help/customization/manual?new-domain).
-// [Session info](http://clicky.com/help/customization/manual?new-domain#/help/customization#session)
-
-var Provider = require('../provider')
-  , user     = require('../user')
-  , extend   = require('extend')
-  , load     = require('load-script');
+};
 
 
-module.exports = Provider.extend({
+/**
+ * Get the group's properties. Always convert ISO date strings into real dates,
+ * since they aren't parsed back from local storage.
+ *
+ * @return {Object}
+ */
 
-  key : 'siteId',
-
-  options : {
-    siteId : null
-  },
-
-
-  initialize : function (options, ready) {
-    window.clicky_site_ids = window.clicky_site_ids || [];
-    window.clicky_site_ids.push(options.siteId);
-
-    var userId  = user.id()
-      , traits  = user.traits()
-      , session = {};
-
-    if (userId) session.username = userId;
-    extend(session, traits);
-
-    window.clicky_custom = { session : session };
-
-    load('//static.getclicky.com/js', ready);
-  },
+Group.prototype._getProperties = function () {
+  var ret = this._options.persist
+    ? store.get(this._options.localStorage.key)
+    : this._properties;
+  return ret ? traverse(clone(ret)) : {};
+};
 
 
-  track : function (event, properties) {
-    // In case the Clicky library hasn't loaded yet.
-    if (!window.clicky) return;
+/**
+ * Set the group's `properties`.
+ *
+ * @param {Object} properties
+ */
 
-    // We aren't guaranteed `clicky` is available until the script has been
-    // requested and run, hence the check.
-    window.clicky.log(window.location.href, event);
+Group.prototype._setProperties = function (properties) {
+  properties || (properties = {});
+  if (this._options.persist) {
+    store.set(this._options.localStorage.key, properties);
+  } else {
+    this._properties = properties;
   }
+};
+
+
+/**
+ * Idenfity the group with an `id` and `properties`. If we it's the same group,
+ * extend the existing `properties` instead of overwriting.
+ *
+ * @param {String} id
+ * @param {Object} properties
+ */
+
+Group.prototype.identify = function (id, properties) {
+  properties || (properties = {});
+  var current = this.id();
+  if (current === null || current === id) properties = extend(this.properties(), properties);
+  if (id) this.id(id);
+  debug('identify %o, %o', id, properties);
+  this.properties(properties);
+  this.save();
+};
+
+
+/**
+ * Save the group to local storage and the cookie.
+ *
+ * @return {Boolean}
+ */
+
+Group.prototype.save = function () {
+  if (!this._options.persist) return false;
+  cookie.set(this._options.cookie.key, this.id());
+  store.set(this._options.localStorage.key, this.properties());
+  return true;
+};
+
+
+/**
+ * Log the group out, reseting `id` and `properties` to defaults.
+ */
+
+Group.prototype.logout = function () {
+  this.id(null);
+  this.properties({});
+  cookie.remove(this._options.cookie.key);
+  store.remove(this._options.localStorage.key);
+};
+
+
+/**
+ * Reset all group state, logging out and returning options to defaults.
+ */
+
+Group.prototype.reset = function () {
+  this.logout();
+  this.options({});
+};
+
+
+/**
+ * Load saved group `id` or `properties` from storage.
+ */
+
+Group.prototype.load = function () {
+  this.id(cookie.get(this._options.cookie.key));
+  this.properties(store.get(this._options.localStorage.key));
+};
+
+
+/**
+ * Expose the group singleton.
+ */
+
+module.exports = bind.all(new Group());
+
+
+/**
+ * Expose the `Group` constructor.
+ */
+
+module.exports.Group = Group;
 
 });
+require.register("analytics/lib/store.js", function(exports, require, module){
+
+var bind = require('bind');
+var defaults = require('defaults');
+var store = require('store');
+
+
+/**
+ * Initialize a new `Store` with `options`.
+ *
+ * @param {Object} options
+ */
+
+function Store (options) {
+  this.options(options);
+}
+
+
+/**
+ * Set the `options` for the store.
+ *
+ * @param {Object} options
+ *   @field {Boolean} enabled (true)
+ */
+
+Store.prototype.options = function (options) {
+  if (arguments.length === 0) return this._options;
+
+  options = options || {};
+  defaults(options, { enabled : true });
+
+  this.enabled  = options.enabled && store.enabled;
+  this._options = options;
+};
+
+
+/**
+ * Set a `key` and `value` in local storage.
+ *
+ * @param {String} key
+ * @param {Object} value
+ */
+
+Store.prototype.set = function (key, value) {
+  if (!this.enabled) return false;
+  return store.set(key, value);
+};
+
+
+/**
+ * Get a value from local storage by `key`.
+ *
+ * @param {String} key
+ * @return {Object}
+ */
+
+Store.prototype.get = function (key) {
+  if (!this.enabled) return null;
+  return store.get(key);
+};
+
+
+/**
+ * Remove a value from local storage by `key`.
+ *
+ * @param {String} key
+ */
+
+Store.prototype.remove = function (key) {
+  if (!this.enabled) return false;
+  return store.remove(key);
+};
+
+
+/**
+ * Expose the store singleton.
+ */
+
+module.exports = bind.all(new Store());
+
+
+/**
+ * Expose the `Store` constructor.
+ */
+
+module.exports.Store = Store;
 });
-require.register("analytics/src/providers/comscore.js", function(exports, require, module){
-// comScore
-// ---------
-// [Documentation](http://direct.comscore.com/clients/help/FAQ.aspx#faqTagging)
+require.register("analytics/lib/user.js", function(exports, require, module){
 
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'c2',
-
-  options : {
-    c1 : '2',
-    c2 : null
-  },
+var debug = require('debug')('analytics:user');
+var bind = require('bind');
+var clone = require('clone');
+var cookie = require('./cookie');
+var defaults = require('defaults');
+var extend = require('extend');
+var store = require('./store');
+var traverse = require('isodate-traverse');
 
 
-  // Pass the entire options object directly into comScore.
-  initialize : function (options, ready) {
-    window._comscore = window._comscore || [];
-    window._comscore.push(options);
-    load({
-      http  : 'http://b.scorecardresearch.com/beacon.js',
-      https : 'https://sb.scorecardresearch.com/beacon.js'
-    }, ready);
-  }
+/**
+ * Initialize a new `User` with `options`.
+ *
+ * @param {Object} options
+ */
 
-});
-});
-require.register("analytics/src/providers/crazyegg.js", function(exports, require, module){
-// CrazyEgg
-// --------
-// [Documentation](www.crazyegg.com).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
+function User (options) {
+  this.options(options);
+  this.id(null);
+  this.traits({});
+}
 
 
-module.exports = Provider.extend({
+/**
+ * Get or set storage `options`.
+ *
+ * @param {Object} options
+ *   @property {Object} cookie
+ *   @property {Object} localStorage
+ *   @property {Boolean} persist (default: `true`)
+ */
 
-  key : 'accountNumber',
+User.prototype.options = function (options) {
+  if (arguments.length === 0) return this._options;
+  options || (options = {});
 
-  options : {
-    accountNumber : null
-  },
-
-
-  initialize : function (options, ready) {
-    var accountPath = options.accountNumber.slice(0,4) + '/' + options.accountNumber.slice(4);
-    load('//dnn506yrbagrg.cloudfront.net/pages/scripts/'+accountPath+'.js?'+Math.floor(new Date().getTime()/3600000), ready);
-  }
-
-});
-});
-require.register("analytics/src/providers/customerio.js", function(exports, require, module){
-// Customer.io
-// -----------
-// [Documentation](http://customer.io/docs/api/javascript.html).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , isEmail  = require('is-email')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'siteId',
-
-  options : {
-    siteId : null
-  },
-
-
-  initialize : function (options, ready) {
-    var _cio = window._cio = window._cio || [];
-    (function() {
-      var a,b,c;
-      a = function (f) {
-        return function () {
-          _cio.push([f].concat(Array.prototype.slice.call(arguments,0)));
-        };
-      };
-      b = ['identify', 'track'];
-      for (c = 0; c < b.length; c++) {
-        _cio[b[c]] = a(b[c]);
-      }
-    })();
-
-    // Load the Customer.io script and add the required `id` and `data-site-id`.
-    var script = load('https://assets.customer.io/assets/track.js');
-    script.id = 'cio-tracker';
-    script.setAttribute('data-site-id', options.siteId);
-
-    // Since Customer.io creates their required methods in their snippet, we
-    // don't need to wait to be ready.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    // Don't do anything if we just have traits, because Customer.io
-    // requires a `userId`.
-    if (!userId) return;
-
-    traits || (traits = {});
-
-    // Customer.io takes the `userId` as part of the traits object.
-    traits.id = userId;
-
-    // If there wasn't already an email and the userId is one, use it.
-    if (!traits.email && isEmail(userId)) traits.email = userId;
-
-    // Swap the `created` trait to the `created_at` that Customer.io needs
-    // and convert it from milliseconds to seconds.
-    if (traits.created) {
-      traits.created_at = Math.floor(traits.created/1000);
-      delete traits.created;
+  defaults(options, {
+    persist: true,
+    cookie: {
+      key: 'ajs_user_id',
+      oldKey: 'ajs_user'
+    },
+    localStorage: {
+      key: 'ajs_user_traits'
     }
+  });
 
-    window._cio.identify(traits);
-  },
+  this._options = options;
+};
 
 
-  track : function (event, properties) {
-    window._cio.track(event, properties);
+/**
+ * Get or set the user's `id`.
+ *
+ * @param {String} id
+ */
+
+User.prototype.id = function (id) {
+  switch (arguments.length) {
+    case 0: return this._getId();
+    case 1: return this._setId(id);
   }
-
-});
-});
-require.register("analytics/src/providers/errorception.js", function(exports, require, module){
-// Errorception
-// ------------
-// [Documentation](http://errorception.com/).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
+};
 
 
-module.exports = Provider.extend({
+/**
+ * Get the user's id.
+ *
+ * @return {String}
+ */
 
-  key : 'projectId',
-
-  options : {
-    projectId : null,
-
-    // Whether to store metadata about the user on `identify` calls, using
-    // the [Errorception `meta` API](http://blog.errorception.com/2012/11/capture-custom-data-with-your-errors.html).
-    meta : true
-  },
-
-
-  initialize : function (options, ready) {
-    window._errs = window._errs || [options.projectId];
-    load('//d15qhc0lu1ghnk.cloudfront.net/beacon.js');
-
-    // Attach the window `onerror` event.
-    window.onerror = function () {
-      window._errs.push(arguments);
-    };
-
-    // Errorception makes a queue, so it's ready immediately.
-    ready();
-  },
+User.prototype._getId = function () {
+  var ret = this._options.persist
+    ? cookie.get(this._options.cookie.key)
+    : this._id;
+  return ret === undefined ? null : ret;
+};
 
 
-  identify : function (userId, traits) {
-    if (!this.options.meta || !traits) return;
+/**
+ * Set the user's `id`.
+ *
+ * @param {String} id
+ */
 
-    // If the custom metadata object hasn't ever been made, make it.
-    window._errs.meta || (window._errs.meta = {});
-
-    // Add all of the traits as metadata.
-    extend(window._errs.meta, traits);
+User.prototype._setId = function (id) {
+  if (this._options.persist) {
+    cookie.set(this._options.cookie.key, id);
+  } else {
+    this._id = id;
   }
-
-});
-});
-require.register("analytics/src/providers/foxmetrics.js", function(exports, require, module){
-// FoxMetrics
-// -----------
-// [Website] (http://foxmetrics.com)
-// [Documentation](http://foxmetrics.com/documentation)
-// [Documentation - JS](http://foxmetrics.com/documentation/apijavascript)
-// [Support](http://support.foxmetrics.com)
-
-var Provider = require('../provider')
-  , extend = require('extend')
-  , load   = require('load-script');
+};
 
 
-module.exports = Provider.extend({
+/**
+ * Get or set the user's `traits`.
+ *
+ * @param {String} traits
+ */
 
-  key : 'appId',
-
-  options : {
-    appId : null
-  },
-
-
-  initialize : function (options, ready) {
-    var _fxm = window._fxm || {};
-    window._fxm = _fxm.events || [];
-    load('//d35tca7vmefkrc.cloudfront.net/scripts/' + options.appId + '.js');
-
-    // FoxMetrics makes a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    // A `userId` is required for profile updates, otherwise its a waste of
-    // resources as nothing will get updated.
-    if (!userId) return;
-
-    // FoxMetrics needs the first and last name seperately.
-    var firstName = null
-      , lastName  = null
-      , email     = null;
-    if (traits && traits.name) {
-      firstName = traits.name.split(' ')[0];
-      lastName = traits.name.split(' ')[1];
-    }
-    if (traits && traits.email) {
-      email = traits.email;
-    }
-
-    // We should probably remove name and email before passing as attributes.
-    window._fxm.push([
-      '_fxm.visitor.profile',
-      userId,        // user id
-      firstName,     // first name
-      lastName,      // last name
-      email,         // email
-      null,          // address
-      null,          // social
-      null,          // partners
-      traits || null // attributes
-    ]);
-  },
-
-
-  track : function (event, properties) {
-    window._fxm.push([
-      event,     // event name
-      null,      // category
-      properties // properties
-    ]);
-  },
-
-
-  pageview : function (url) {
-    window._fxm.push([
-      '_fxm.pages.view',
-      null,        // title
-      null,        // name
-      null,        // category
-      url || null, // url
-      null         // referrer
-    ]);
+User.prototype.traits = function (traits) {
+  switch (arguments.length) {
+    case 0: return this._getTraits();
+    case 1: return this._setTraits(traits);
   }
-
-});
-});
-require.register("analytics/src/providers/gauges.js", function(exports, require, module){
-// Gauges
-// -------
-// [Documentation](http://get.gaug.es/documentation/tracking/).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
+};
 
 
-module.exports = Provider.extend({
+/**
+ * Get the user's traits. Always convert ISO date strings into real dates, since
+ * they aren't parsed back from local storage.
+ *
+ * @return {Object}
+ */
 
-  key : 'siteId',
-
-  options : {
-    siteId : null
-  },
-
-
-  // Load the library and add the `id` and `data-site-id` Gauges needs.
-  initialize : function (options, ready) {
-    window._gauges = window._gauges || [];
-    var script = load('//secure.gaug.es/track.js');
-    script.id = 'gauges-tracker';
-    script.setAttribute('data-site-id', options.siteId);
-
-    // Gauges make a queue so it's ready immediately.
-    ready();
-  },
+User.prototype._getTraits = function () {
+  var ret = this._options.persist
+    ? store.get(this._options.localStorage.key)
+    : this._traits;
+  return ret ? traverse(clone(ret)) : {};
+};
 
 
-  pageview : function (url) {
-    window._gauges.push(['track']);
+/**
+ * Set the user's `traits`.
+ *
+ * @param {Object} traits
+ */
+
+User.prototype._setTraits = function (traits) {
+  traits || (traits = {});
+  if (this._options.persist) {
+    store.set(this._options.localStorage.key, traits);
+  } else {
+    this._traits = traits;
   }
+};
+
+
+/**
+ * Idenfity the user with an `id` and `traits`. If we it's the same user, extend
+ * the existing `traits` instead of overwriting.
+ *
+ * @param {String} id
+ * @param {Object} traits
+ */
+
+User.prototype.identify = function (id, traits) {
+  traits || (traits = {});
+  var current = this.id();
+  if (current === null || current === id) traits = extend(this.traits(), traits);
+  if (id) this.id(id);
+  debug('identify %o, %o', id, traits);
+  this.traits(traits);
+  this.save();
+};
+
+
+/**
+ * Save the user to local storage and the cookie.
+ *
+ * @return {Boolean}
+ */
+
+User.prototype.save = function () {
+  if (!this._options.persist) return false;
+  cookie.set(this._options.cookie.key, this.id());
+  store.set(this._options.localStorage.key, this.traits());
+  return true;
+};
+
+
+/**
+ * Log the user out, reseting `id` and `traits` to defaults.
+ */
+
+User.prototype.logout = function () {
+  this.id(null);
+  this.traits({});
+  cookie.remove(this._options.cookie.key);
+  store.remove(this._options.localStorage.key);
+};
+
+
+/**
+ * Reset all user state, logging out and returning options to defaults.
+ */
+
+User.prototype.reset = function () {
+  this.logout();
+  this.options({});
+};
+
+
+/**
+ * Load saved user `id` or `traits` from storage.
+ */
+
+User.prototype.load = function () {
+  if (this._loadOldCookie()) return;
+  this.id(cookie.get(this._options.cookie.key));
+  this.traits(store.get(this._options.localStorage.key));
+};
+
+
+/**
+ * BACKWARDS COMPATIBILITY: Load the old user from the cookie.
+ *
+ * @return {Boolean}
+ * @api private
+ */
+
+User.prototype._loadOldCookie = function () {
+  var user = cookie.get(this._options.cookie.oldKey);
+  if (!user) return false;
+
+  this.id(user.id);
+  this.traits(user.traits);
+  cookie.remove(this._options.cookie.oldKey);
+  return true;
+};
+
+
+/**
+ * Expose the user singleton.
+ */
+
+module.exports = bind.all(new User());
+
+
+/**
+ * Expose the `User` constructor.
+ */
+
+module.exports.User = User;
 
 });
-});
-require.register("analytics/src/providers/google-analytics.js", function(exports, require, module){
-// Google Analytics
-// ----------------
-// [Documentation](https://developers.google.com/analytics/devguides/collection/gajs/).
-
-var Provider  = require('../provider')
-  , each      = require('each')
-  , extend    = require('extend')
-  , load      = require('load-script')
-  , type      = require('type')
-  , url       = require('url')
-  , canonical = require('canonical');
-
-
-module.exports = Provider.extend({
-
-  key : 'trackingId',
-
-  options : {
-    // Your Google Analytics Tracking ID.
-    trackingId : null,
-    // Whether or not to track and initial pageview when initialized.
-    initialPageview : true,
-    // An optional domain setting, to restrict where events can originate from.
-    domain : null,
-    // Whether to anonymize the IP address collected for the user.
-    anonymizeIp : false,
-    // Whether to use Google Analytics's Enhanced Link Attribution feature:
-    // http://support.google.com/analytics/bin/answer.py?hl=en&answer=2558867
-    enhancedLinkAttribution : false,
-    // The setting to use for Google Analytics's Site Speed Sample Rate feature:
-    // https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiBasicConfiguration#_gat.GA_Tracker_._setSiteSpeedSampleRate
-    siteSpeedSampleRate : null,
-    // Whether to enable GOogle's DoubleClick remarketing feature.
-    doubleClick : false
-  },
-
-
-  initialize : function (options, ready) {
-    window._gaq = window._gaq || [];
-    window._gaq.push(['_setAccount', options.trackingId]);
-
-    // Apply a bunch of optional settings.
-    if (options.domain) {
-      window._gaq.push(['_setDomainName', options.domain]);
-    }
-    if (options.enhancedLinkAttribution) {
-      var protocol = 'https:' === document.location.protocol ? 'https:' : 'http:';
-      var pluginUrl = protocol + '//www.google-analytics.com/plugins/ga/inpage_linkid.js';
-      window._gaq.push(['_require', 'inpage_linkid', pluginUrl]);
-    }
-    if (type(options.siteSpeedSampleRate) === 'number') {
-      window._gaq.push(['_setSiteSpeedSampleRate', options.siteSpeedSampleRate]);
-    }
-    if (options.anonymizeIp) {
-      window._gaq.push(['_gat._anonymizeIp']);
-    }
-    if (options.initialPageview) {
-      var path, canon = canonical();
-      if (canon) path = url.parse(canon).pathname;
-      this.pageview(path);
-    }
-
-    // URLs change if DoubleClick is on.
-    if (options.doubleClick) {
-      load('//stats.g.doubleclick.net/dc.js');
-    } else {
-      load({
-        http  : 'http://www.google-analytics.com/ga.js',
-        https : 'https://ssl.google-analytics.com/ga.js'
-      });
-    }
-
-    // Google makes a queue so it's ready immediately.
-    ready();
-  },
-
-
-  track : function (event, properties) {
-    properties || (properties = {});
-
-    var value;
-
-    // Since value is a common property name, ensure it is a number
-    if (type(properties.value) === 'number') value = properties.value;
-
-    // Try to check for a `category` and `label`. A `category` is required,
-    // so if it's not there we use `'All'` as a default. We can safely push
-    // undefined if the special properties don't exist. Try using revenue
-    // first, but fall back to a generic `value` as well.
-    window._gaq.push([
-      '_trackEvent',
-      properties.category || 'All',
-      event,
-      properties.label,
-      Math.round(properties.revenue) || value,
-      properties.noninteraction
-    ]);
-  },
-
 
-  pageview : function (url) {
-    // If there isn't a url, that's fine.
-    window._gaq.push(['_trackPageview', url]);
-  }
 
-});
-});
-require.register("analytics/src/providers/gosquared.js", function(exports, require, module){
-// GoSquared
-// ---------
-// [Documentation](www.gosquared.com/support).
-// [Tracker Functions](https://www.gosquared.com/customer/portal/articles/612063-tracker-functions)
-// Will automatically [integrate with Olark](https://www.gosquared.com/support/articles/721791-setting-up-olark-live-chat).
 
-var Provider = require('../provider')
-  , user     = require('../user')
-  , extend   = require('extend')
-  , clone    = require('clone')
-  , load     = require('load-script');
 
 
-module.exports = Provider.extend({
 
-  key : 'siteToken',
 
-  options : {
-    siteToken : null
-  },
 
 
-  initialize : function (options, ready) {
-    var GoSquared = window.GoSquared = {};
-    GoSquared.acct = options.siteToken;
-    GoSquared.q = [];
-    window._gstc_lt =+ (new Date());
 
-    GoSquared.VisitorName = user.id();
-    GoSquared.Visitor = user.traits();
 
-    load('//d1l6p2sc9645hc.cloudfront.net/tracker.js');
 
-    // GoSquared makes a queue, so it's ready immediately.
-    ready();
-  },
 
 
-  identify : function (userId, traits) {
-    // TODO figure out if this will actually work. Seems like GoSquared will
-    // never know these values are updated.
-    if (userId) window.GoSquared.UserName = userId;
-    if (traits) window.GoSquared.Visitor = traits;
-  },
 
 
-  track : function (event, properties) {
-    // GoSquared sets a `gs_evt_name` property with a value of the event
-    // name, so it relies on properties being an object.
-    window.GoSquared.q.push(['TrackEvent', event, properties || {}]);
-  },
 
 
-  pageview : function (url) {
-    window.GoSquared.q.push(['TrackView', url]);
-  }
 
-});
-});
-require.register("analytics/src/providers/hittail.js", function(exports, require, module){
-// HitTail
-// -------
-// [Documentation](www.hittail.com).
 
-var Provider = require('../provider')
-  , extend = require('extend')
-  , load   = require('load-script');
 
 
-module.exports = Provider.extend({
 
-  key : 'siteId',
 
-  options : {
-    siteId : null
-  },
-
-
-  initialize : function (options, ready) {
-    load('//' + options.siteId + '.hittail.com/mlt.js', ready);
-  }
-
-});
-});
-require.register("analytics/src/providers/hubspot.js", function(exports, require, module){
-// HubSpot
-// -------
-// [Documentation](http://hubspot.clarify-it.com/d/4m62hl)
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , isEmail  = require('is-email')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'portalId',
-
-  options : {
-    portalId : null
-  },
-
-
-  initialize : function (options, ready) {
-    // HubSpot checks in their snippet to make sure another script with
-    // `hs-analytics` isn't already in the DOM. Seems excessive, but who knows
-    // if there's weird deprecation going on :p
-    if (!document.getElementById('hs-analytics')) {
-      window._hsq = window._hsq || [];
-      var script = load('https://js.hubspot.com/analytics/' + (Math.ceil(new Date()/300000)*300000) + '/' + options.portalId + '.js');
-      script.id = 'hs-analytics';
-    }
-
-    // HubSpot makes a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  // HubSpot does not use a userId, but the email address is required on
-  // the traits object.
-  identify : function (userId, traits) {
-    // If there wasn't already an email and the userId is one, use it.
-    if ((!traits || !traits.email) && isEmail(userId)) {
-      traits || (traits = {});
-      traits.email = userId;
-    }
-
-    // Still don't have any traits? Get out.
-    if (!traits) return;
-
-    window._hsq.push(["identify", traits]);
-  },
-
-
-  // Event Tracking is available to HubSpot Enterprise customers only. In
-  // addition to adding any unique event name, you can also use the id of an
-  // existing custom event as the event variable.
-  track : function (event, properties) {
-    window._hsq.push(["trackEvent", event, properties]);
-  },
-
-
-  // HubSpot doesn't support passing in a custom URL.
-  pageview : function (url) {
-    window._hsq.push(['_trackPageview']);
-  }
-
-});
-});
-require.register("analytics/src/providers/index.js", function(exports, require, module){
-
-exports['Bitdeli']          = require('./bitdeli');
-exports['Chartbeat']        = require('./chartbeat');
-exports['Clicky']           = require('./clicky');
-exports['comScore']         = require('./comscore');
-exports['CrazyEgg']         = require('./crazyegg');
-exports['Customer.io']      = require('./customerio');
-exports['Errorception']     = require('./errorception');
-exports['FoxMetrics']       = require('./foxmetrics');
-exports['Gauges']           = require('./gauges');
-exports['Google Analytics'] = require('./google-analytics');
-exports['GoSquared']        = require('./gosquared');
-exports['HitTail']          = require('./hittail');
-exports['HubSpot']          = require('./hubspot');
-exports['Intercom']         = require('./intercom');
-exports['Keen IO']          = require('./keen-io');
-exports['KISSmetrics']      = require('./kissmetrics');
-exports['Klaviyo']          = require('./klaviyo');
-exports['LiveChat']         = require('./livechat');
-exports['Mixpanel']         = require('./mixpanel');
-exports['Olark']            = require('./olark');
-exports['Perfect Audience'] = require('./perfect-audience');
-exports['Quantcast']        = require('./quantcast');
-exports['Sentry']           = require('./sentry');
-exports['SnapEngage']       = require('./snapengage');
-exports['USERcycle']        = require('./usercycle');
-exports['UserVoice']        = require('./uservoice');
-exports['Vero']             = require('./vero');
-exports['Woopra']           = require('./woopra');
-});
-require.register("analytics/src/providers/intercom.js", function(exports, require, module){
-// Intercom
-// --------
-// [Documentation](http://docs.intercom.io/).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script')
-  , isEmail  = require('is-email');
-
-
-module.exports = Provider.extend({
-
-  // Whether Intercom has already been initialized or not. This is because
-  // since we initialize Intercom on `identify`, people can make multiple
-  // `identify` calls and we don't want that breaking anything.
-  initialized : false,
-
-  key : 'appId',
-
-  options : {
-    appId : null,
-
-    // An optional setting to display the Intercom inbox widget.
-    activator : null,
-    // Whether to show the count of messages for the inbox widget.
-    counter : true
-  },
-
-
-  // Intercom identifies when the script is loaded, so instead of initializing
-  // in `initialize` we initialize in `identify`.
-  initialize : function (options, ready) {
-    // Intercom is weird, so we call ready right away so that it doesn't block
-    // everything from loading.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    // If we've already been initialized once, don't do it again since we
-    // load the script when this happens. Intercom can only handle one
-    // identify call.
-    if (this.initialized) return;
-
-    // Don't do anything if we just have traits.
-    if (!userId) return;
-
-    // Pass traits directly in to Intercom's `custom_data`.
-    var settings = window.intercomSettings = {
-      app_id      : this.options.appId,
-      user_id     : userId,
-      user_hash   : this.options.userHash,
-      custom_data : traits || {}
-    };
-
-    // Augment `intercomSettings` with some of the special traits. The `created`
-    // property must also be converted to `created_at` in seconds.
-    if (traits) {
-      settings.email = traits.email;
-      settings.name = traits.name;
-      settings.company = traits.company;
-      if (traits.created) settings.created_at = Math.floor(traits.created/1000);
-    }
-
-    // If they didn't pass an email, check to see if the `userId` qualifies.
-    if (isEmail(userId) && (traits && !traits.email)) settings.email = userId;
-
-    // Optionally add the widget.
-    if (this.options.activator) {
-      settings.widget = {
-        activator   : this.options.activator,
-        use_counter : this.options.counter
-      };
-    }
-
-    load('https://api.intercom.io/api/js/library.js');
 
-    // Set the initialized state, so that we don't initialize again.
-    this.initialized = true;
-  }
 
-});
 
-});
-require.register("analytics/src/providers/keen-io.js", function(exports, require, module){
-// Keen IO
-// -------
-// [Documentation](https://keen.io/docs/).
 
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
 
-
-module.exports = Provider.extend({
-
-  options : {
-    // Keen IO has two required options: `projectId` and `apiKey`.
-    projectId : null,
-    apiKey : null,
-    // Whether or not to pass pageviews on to Keen IO.
-    pageview : false,
-    // Whether or not to track an initial pageview on initialize.
-    initialPageview : false
-  },
-
-
-  initialize : function (options, ready) {
-    window.Keen = window.Keen||{configure:function(a,b,c){this._pId=a;this._ak=b;this._op=c},addEvent:function(a,b,c,d){this._eq=this._eq||[];this._eq.push([a,b,c,d])},setGlobalProperties:function(a){this._gp=a},onChartsReady:function(a){this._ocrq=this._ocrq||[];this._ocrq.push(a)}};
-    window.Keen.configure(options.projectId, options.apiKey);
-
-    load('//dc8na2hxrj29i.cloudfront.net/code/keen-2.0.0-min.js');
-
-    if (options.initialPageview) this.pageview();
-
-    // Keen IO defines all their functions in the snippet, so they
-    // are ready immediately.
-    ready();
-  },
-
 
-  identify : function (userId, traits) {
-    // Use Keen IO global properties to include `userId` and `traits` on
-    // every event sent to Keen IO.
-    var globalUserProps = {};
-    if (userId) globalUserProps.userId = userId;
-    if (traits) globalUserProps.traits = traits;
-    if (userId || traits) {
-      window.Keen.setGlobalProperties(function(eventCollection) {
-        return { user: globalUserProps };
-      });
-    }
-  },
 
 
-  track : function (event, properties) {
-    window.Keen.addEvent(event, properties);
-  },
 
 
-  pageview : function (url) {
-    if (!this.options.pageview) return;
 
-    var properties;
-    if (url) properties = { url : url };
 
-    this.track('Loaded a Page', properties);
-  }
 
-});
-});
-require.register("analytics/src/providers/kissmetrics.js", function(exports, require, module){
-// KISSmetrics
-// -----------
-// [Documentation](http://support.kissmetrics.com/apis/javascript).
 
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , alias    = require('alias')
-  , load     = require('load-script');
+require.alias("avetisk-defaults/index.js", "analytics/deps/defaults/index.js");
+require.alias("avetisk-defaults/index.js", "defaults/index.js");
 
-
-module.exports = Provider.extend({
-
-  key : 'apiKey',
-
-  options : {
-    apiKey : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._kmq = window._kmq || [];
-    load('//i.kissmetrics.com/i.js');
-    load('//doug1izaerwt3.cloudfront.net/' + options.apiKey + '.1.js');
-
-    // KISSmetrics creates a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  // KISSmetrics uses two separate methods: `identify` for storing the
-  // `userId`, and `set` for storing `traits`.
-  identify : function (userId, traits) {
-    if (userId) window._kmq.push(['identify', userId]);
-    if (traits) window._kmq.push(['set', traits]);
-  },
-
-
-  track : function (event, properties) {
-    // KISSmetrics handles revenue with the `'Billing Amount'` property by
-    // default, although it's changeable in the interface.
-    if (properties) {
-      alias(properties, {
-        'revenue' : 'Billing Amount'
-      });
-    }
-
-    window._kmq.push(['record', event, properties]);
-  },
-
-
-  // Although undocumented, KISSmetrics actually supports not passing a second
-  // ID, in which case it uses the currenty identified user's ID.
-  alias : function (newId, originalId) {
-    window._kmq.push(['alias', newId, originalId]);
-  }
-
-});
-});
-require.register("analytics/src/providers/klaviyo.js", function(exports, require, module){
-// Klaviyo
-// -------
-// [Documentation](https://www.klaviyo.com/docs).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'apiKey',
-
-  options : {
-    apiKey : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._learnq = window._learnq || [];
-    window._learnq.push(['account', options.apiKey]);
-    load('//a.klaviyo.com/media/js/learnmarklet.js');
-
-    // Klaviyo creats a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    if (!userId && !traits) return;
-
-    // Klaviyo takes the user ID on the traits object itself.
-    traits || (traits = {});
-    if (userId) traits.$id = userId;
-
-    window._learnq.push(['identify', traits]);
-  },
-
-
-  track : function (event, properties) {
-    window._learnq.push(['track', event, properties]);
-  }
-
-});
-});
-require.register("analytics/src/providers/livechat.js", function(exports, require, module){
-// LiveChat
-// --------
-// [Documentation](http://www.livechatinc.com/api/javascript-api).
-
-var Provider = require('../provider')
-  , each     = require('each')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'license',
-
-  options : {
-    license : null
-  },
-
-  initialize : function (options, ready) {
-    window.__lc = { license : options.license };
-    load('//cdn.livechatinc.com/tracking.js', ready);
-  },
-
-
-  // LiveChat isn't an analytics service, but we can use the `userId` and
-  // `traits` to tag the user with their real name in the chat console.
-  identify : function (userId, traits) {
-    // In case the LiveChat library hasn't loaded yet.
-    if (!window.LC_API) return;
-
-    // We need either a `userId` or `traits`.
-    if (!userId && !traits) return;
-
-    // LiveChat takes them in an array format.
-    var variables = [];
-
-    if (userId) variables.push({ name: 'User ID', value: userId });
-    if (traits) {
-      each(traits, function (key, value) {
-        variables.push({
-          name  : key,
-          value : value
-        });
-      });
-    }
-
-    window.LC_API.set_custom_variables(variables);
-  }
-
-});
-});
-require.register("analytics/src/providers/mixpanel.js", function(exports, require, module){
-// Mixpanel
-// --------
-// [Documentation](https://mixpanel.com/docs/integration-libraries/javascript),
-// [documentation](https://mixpanel.com/docs/people-analytics/javascript),
-// [documentation](https://mixpanel.com/docs/integration-libraries/javascript-full-api).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , alias    = require('alias')
-  , isEmail  = require('is-email');
-
-
-module.exports = Provider.extend({
-
-  key : 'token',
-
-  options : {
-    // Whether to call `mixpanel.nameTag` on `identify`.
-    nameTag : true,
-    // Whether to use Mixpanel's People API.
-    people : false,
-    // The Mixpanel API token for your account.
-    token : null,
-    // Whether to track pageviews to Mixpanel.
-    pageview : false,
-    // Whether to track an initial pageview on initialize.
-    initialPageview : false
-  },
-
-  initialize : function (options, ready) {
-    (function (c, a) {
-      window.mixpanel = a;
-      var b, d, h, e;
-      b = c.createElement('script');
-      b.type = 'text/javascript';
-      b.async = true;
-      b.src = ('https:' === c.location.protocol ? 'https:' : 'http:') + '//cdn.mxpnl.com/libs/mixpanel-2.2.min.js';
-      d = c.getElementsByTagName('script')[0];
-      d.parentNode.insertBefore(b, d);
-      a._i = [];
-      a.init = function (b, c, f) {
-        function d(a, b) {
-          var c = b.split('.');
-          2 == c.length && (a = a[c[0]], b = c[1]);
-          a[b] = function () {
-              a.push([b].concat(Array.prototype.slice.call(arguments, 0)));
-          };
-        }
-        var g = a;
-        'undefined' !== typeof f ? g = a[f] = [] : f = 'mixpanel';
-        g.people = g.people || [];
-        h = ['disable', 'track', 'track_pageview', 'track_links', 'track_forms', 'register', 'register_once', 'unregister', 'identify', 'alias', 'name_tag', 'set_config', 'people.set', 'people.increment'];
-        for (e = 0; e < h.length; e++) d(g, h[e]);
-        a._i.push([b, c, f]);
-      };
-      a.__SV = 1.2;
-    })(document, window.mixpanel || []);
-
-    // Pass options directly to `init` as the second argument.
-    window.mixpanel.init(options.token, options);
-
-    if (options.initialPageview) this.pageview();
-
-    // Mixpanel creats all of its methods in the snippet, so it's ready
-    // immediately.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    // If we have an email and no email trait, set the email trait.
-    if (userId && isEmail(userId) && (traits && !traits.email)) {
-      traits || (traits = {});
-      traits.email = userId;
-    }
-
-    // Alias the traits' keys with dollar signs for Mixpanel's API.
-    if (traits) {
-      alias(traits, {
-        'created'   : '$created',
-        'email'     : '$email',
-        'firstName' : '$first_name',
-        'lastName'  : '$last_name',
-        'lastSeen'  : '$last_seen',
-        'name'      : '$name',
-        'username'  : '$username'
-      });
-    }
-
-    // Finally, call all of the identify equivalents. Verify certain calls
-    // against options to make sure they're enabled.
-    if (userId) {
-      window.mixpanel.identify(userId);
-      if (this.options.nameTag) window.mixpanel.name_tag(traits && traits.$email || userId);
-    }
-    if (traits) {
-      window.mixpanel.register(traits);
-      if (this.options.people) window.mixpanel.people.set(traits);
-    }
-  },
-
-
-  track : function (event, properties) {
-    window.mixpanel.track(event, properties);
-
-    // Mixpanel handles revenue with a `transaction` call in their People
-    // feature. So if we're using people, record a transcation.
-    if (properties && properties.revenue && this.options.people) {
-      window.mixpanel.people.track_charge(properties.revenue);
-    }
-  },
-
-
-  // Mixpanel doesn't actually track the pageviews, but they do show up in the
-  // Mixpanel stream.
-  pageview : function (url) {
-    window.mixpanel.track_pageview(url);
-
-    // If they don't want pageviews tracked, leave now.
-    if (!this.options.pageview) return;
-
-    var properties;
-    if (url) properties = { url : url };
-    this.track('Loaded a Page', properties);
-  },
-
-
-  // Although undocumented, Mixpanel actually supports the `originalId`. It
-  // just usually defaults to the current user's `distinct_id`.
-  alias : function (newId, originalId) {
-
-    if(window.mixpanel.get_distinct_id &&
-       window.mixpanel.get_distinct_id() === newId) return;
-
-    // HACK: internal mixpanel API to ensure we don't overwrite.
-    if(window.mixpanel.get_property &&
-       window.mixpanel.get_property('$people_distinct_id')) return;
-
-    window.mixpanel.alias(newId, originalId);
-  }
-
-});
-});
-require.register("analytics/src/providers/olark.js", function(exports, require, module){
-// Olark
-// -----
-// [Documentation](http://www.olark.com/documentation).
-
-var Provider = require('../provider')
-  , extend   = require('extend');
-
-
-module.exports = Provider.extend({
-
-  key : 'siteId',
-
-  options : {
-    siteId   : null,
-    identify : true,
-    track    : false,
-    pageview : true
-  },
-
-
-  initialize : function (options, ready) {
-    window.olark||(function(c){var f=window,d=document,l=f.location.protocol=="https:"?"https:":"http:",z=c.name,r="load";var nt=function(){f[z]=function(){(a.s=a.s||[]).push(arguments)};var a=f[z]._={},q=c.methods.length;while(q--){(function(n){f[z][n]=function(){f[z]("call",n,arguments)}})(c.methods[q])}a.l=c.loader;a.i=nt;a.p={0:+new Date};a.P=function(u){a.p[u]=new Date-a.p[0]};function s(){a.P(r);f[z](r)}f.addEventListener?f.addEventListener(r,s,false):f.attachEvent("on"+r,s);var ld=function(){function p(hd){hd="head";return["<",hd,"></",hd,"><",i,' onl' + 'oad="var d=',g,";d.getElementsByTagName('head')[0].",j,"(d.",h,"('script')).",k,"='",l,"//",a.l,"'",'"',"></",i,">"].join("")}var i="body",m=d[i];if(!m){return setTimeout(ld,100)}a.P(1);var j="appendChild",h="createElement",k="src",n=d[h]("div"),v=n[j](d[h](z)),b=d[h]("iframe"),g="document",e="domain",o;n.style.display="none";m.insertBefore(n,m.firstChild).id=z;b.frameBorder="0";b.id=z+"-loader";if(/MSIE[ ]+6/.test(navigator.userAgent)){b.src="javascript:false"}b.allowTransparency="true";v[j](b);try{b.contentWindow[g].open()}catch(w){c[e]=d[e];o="javascript:var d="+g+".open();d.domain='"+d.domain+"';";b[k]=o+"void(0);"}try{var t=b.contentWindow[g];t.write(p());t.close()}catch(x){b[k]=o+'d.write("'+p().replace(/"/g,String.fromCharCode(92)+'"')+'");d.close();'}a.P(2)};ld()};nt()})({loader: "static.olark.com/jsclient/loader0.js",name:"olark",methods:["configure","extend","declare","identify"]});
-    window.olark.identify(options.siteId);
-
-    // Olark creates all of it's method in the snippet, so it's ready
-    // immediately.
-    ready();
-  },
-
-
-  // Olark isn't an analytics service, but we can use the `userId` and
-  // `traits` to tag the user with their real name in the chat console.
-  identify : function (userId, traits) {
-    if (!this.options.identify) return;
-
-    // Choose the best name for the user that we can get.
-    var name = userId;
-    if (traits && traits.email) name = traits.email;
-    if (traits && traits.name) name = traits.name;
-    if (traits && traits.name && traits.email) name += ' ('+traits.email+')';
-
-    // If we ended up with no name after all that, get out of there.
-    if (!name) return;
-
-    window.olark('api.chat.updateVisitorNickname', {
-      snippet : name
-    });
-  },
-
-
-  // Again, all we're doing is logging events the user triggers to the chat
-  // console, if you so desire it.
-  track : function (event, properties) {
-    // Check the `track` setting to know whether log events or not.
-    if (!this.options.track) return;
-
-    // To stay consistent with olark's default messages, it's all lowercase.
-    window.olark('api.chat.sendNotificationToOperator', {
-      body : 'visitor triggered "'+event+'"'
-    });
-  },
-
-
-  // Again, not analytics, but we can mimic the functionality Olark has for
-  // normal pageviews with pseudo-pageviews, telling the operator when a
-  // visitor changes pages.
-  pageview : function (url) {
-    // Check the `pageview` settings to know whether they want this or not.
-    if (!this.options.pageview) return;
-
-    // To stay consistent with olark's default messages, it's all lowercase.
-    window.olark('api.chat.sendNotificationToOperator', {
-      body : 'looking at ' + window.location.href
-    });
-  }
-
-});
-});
-require.register("analytics/src/providers/perfect-audience.js", function(exports, require, module){
-// Perfect Audience
-// ----------------
-// [Documentation](https://www.perfectaudience.com/docs#javascript_api_autoopen)
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'siteId',
-
-  options : {
-    siteId : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._pa = window._pa || {};
-    load('//tag.perfectaudience.com/serve/' + options.siteId + '.js', ready);
-  },
-
-
-  track : function (event, properties) {
-    // In case the Perfect Audience library hasn't loaded yet.
-    if (!window._pa.track) return;
-
-    window._pa.track(event, properties);
-  }
-
-});
-});
-require.register("analytics/src/providers/quantcast.js", function(exports, require, module){
-// Quantcast
-// ---------
-// [Documentation](https://www.quantcast.com/learning-center/guides/using-the-quantcast-asynchronous-tag/)
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'pCode',
-
-  options : {
-    pCode : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._qevents = window._qevents || [];
-    window._qevents.push({ qacct: options.pCode });
-    load({
-      http  : 'http://edge.quantserve.com/quant.js',
-      https : 'https://secure.quantserve.com/quant.js'
-    }, ready);
-  }
-
-});
-});
-require.register("analytics/src/providers/sentry.js", function(exports, require, module){
-// Sentry
-// ------
-// http://raven-js.readthedocs.org/en/latest/config/index.html
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'config',
-
-  options : {
-    config : null
-  },
-
-
-  initialize : function (options, ready) {
-    load('//d3nslu0hdya83q.cloudfront.net/dist/1.0/raven.min.js', function () {
-      // For now, Raven basically requires `install` to be called.
-      // https://github.com/getsentry/raven-js/blob/master/src/raven.js#L87
-      window.Raven.config(options.config).install();
-      ready();
-    });
-  },
-
-
-  identify : function (userId, traits) {
-    traits || (traits = {});
-    if (userId) traits.id = userId;
-    window.Raven.setUser(traits);
-  }
-
-});
-});
-require.register("analytics/src/providers/snapengage.js", function(exports, require, module){
-// SnapEngage
-// ----------
-// [Documentation](http://help.snapengage.com/installation-guide-getting-started-in-a-snap/).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'apiKey',
-
-  options : {
-    apiKey : null
-  },
-
-
-  initialize : function (options, ready) {
-    load('//commondatastorage.googleapis.com/code.snapengage.com/js/' + options.apiKey + '.js', ready);
-  }
-
-});
-});
-require.register("analytics/src/providers/usercycle.js", function(exports, require, module){
-// USERcycle
-// -----------
-// [Documentation](http://docs.usercycle.com/javascript_api).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script')
-  , user     = require('../user');
-
-
-module.exports = Provider.extend({
-
-  key : 'key',
-
-  options : {
-    key : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._uc = window._uc || [];
-    window._uc.push(['_key', options.key]);
-    load('//api.usercycle.com/javascripts/track.js');
-
-    // USERcycle makes a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    if (userId) window._uc.push(['uid', userId]);
-  },
-
-
-  track : function (event, properties) {
-    // Usercycle seems to use traits instead of properties.
-    var traits = user.traits();
-    window._uc.push(['action', event, traits]);
-  }
-
-});
-});
-require.register("analytics/src/providers/uservoice.js", function(exports, require, module){
-// UserVoice
-// ---------
-// [Documentation](http://feedback.uservoice.com/knowledgebase/articles/16797-how-do-i-customize-and-install-the-uservoice-feedb).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'widgetId',
-
-  options : {
-    widgetId : null
-  },
-
-
-  initialize : function (options, ready) {
-    window.uvOptions = {};
-    load('//widget.uservoice.com/' + options.widgetId + '.js', ready);
-  }
-
-});
-});
-require.register("analytics/src/providers/vero.js", function(exports, require, module){
-// GetVero.com
-// -----------
-// [Documentation](https://github.com/getvero/vero-api/blob/master/sections/js.md).
-
-var Provider = require('../provider')
-  , extend   = require('extend')
-  , isEmail  = require('is-email')
-  , load     = require('load-script');
-
-
-module.exports = Provider.extend({
-
-  key : 'apiKey',
-
-  options : {
-    apiKey : null
-  },
-
-
-  initialize : function (options, ready) {
-    window._veroq = window._veroq || [];
-    window._veroq.push(['init', { api_key: options.apiKey }]);
-    load('//www.getvero.com/assets/m.js');
-
-    // Vero creates a queue, so it's ready immediately.
-    ready();
-  },
-
-
-  identify : function (userId, traits) {
-    // Don't do anything if we just have traits, because Vero
-    // requires a `userId`.
-    if (!userId) return;
-
-    traits || (traits = {});
-
-    // Vero takes the `userId` as part of the traits object.
-    traits.id = userId;
-
-    // If there wasn't already an email and the userId is one, use it.
-    if (!traits.email && isEmail(userId)) traits.email = userId;
-
-    // Vero *requires* an email and an id
-    if (!traits.id || !traits.email) return;
-
-    window._veroq.push(['user', traits]);
-  },
-
-
-  track : function (event, properties) {
-    window._veroq.push(['track', event, properties]);
-  }
-
-});
-});
-require.register("analytics/src/providers/woopra.js", function(exports, require, module){
-// Woopra
-// ------
-// [Documentation](http://www.woopra.com/docs/setup/javascript-tracking/).
-
-var Provider = require('../provider')
-  , each     = require('each')
-  , extend   = require('extend')
-  , isEmail  = require('is-email')
-  , load     = require('load-script')
-  , type     = require('type')
-  , user     = require('../user');
-
-
-module.exports = Provider.extend({
-
-  key : 'domain',
-
-  options : {
-    domain : null
-  },
-
-
-  initialize : function (options, ready) {
-    // Woopra gives us a nice ready callback.
-    var self = this;
-
-    window.woopraReady = function (tracker) {
-      tracker.setDomain(self.options.domain);
-      tracker.setIdleTimeout(300000);
-
-      var userId = user.id()
-        , traits = user.traits();
-
-      self.addTraits(userId, traits, tracker);
-
-      tracker.track();
-
-      ready();
-      return false;
-    };
-
-    load('//static.woopra.com/js/woopra.js');
-  },
-
-
-  identify : function (userId, traits) {
-
-    if (!window.woopraTracker) return;
-
-    this.addTraits(userId, traits, window.woopraTracker);
-    window.woopraTracker.track();
-  },
-
-
-  // Convenience function for updating the userId and traits.
-  addTraits : function (userId, traits, tracker) {
-
-    var addTrait = tracker.addVisitorProperty;
-
-    if (userId) addTrait('id', userId);
-    if (isEmail(userId)) addTrait('email', userId);
-
-    // Seems to only support strings
-    each(traits, function (name, trait) {
-      if (type(trait) === 'string') addTrait(name, trait);
-    });
-  },
-
-
-  track : function (event, properties) {
-    // We aren't guaranteed a tracker.
-    if (!window.woopraTracker) return;
-
-    // Woopra takes its event as dictionaries with the `name` key.
-    var settings = {};
-    settings.name = event;
-
-    // If we have properties, add them to the settings.
-    if (properties) settings = extend({}, properties, settings);
-
-    window.woopraTracker.pushEvent(settings);
-  }
-
-});
-});
 require.alias("component-clone/index.js", "analytics/deps/clone/index.js");
+require.alias("component-clone/index.js", "clone/index.js");
 require.alias("component-type/index.js", "component-clone/deps/type/index.js");
 
 require.alias("component-cookie/index.js", "analytics/deps/cookie/index.js");
+require.alias("component-cookie/index.js", "cookie/index.js");
 
 require.alias("component-each/index.js", "analytics/deps/each/index.js");
+require.alias("component-each/index.js", "each/index.js");
 require.alias("component-type/index.js", "component-each/deps/type/index.js");
 
+require.alias("component-emitter/index.js", "analytics/deps/emitter/index.js");
+require.alias("component-emitter/index.js", "emitter/index.js");
+require.alias("component-indexof/index.js", "component-emitter/deps/indexof/index.js");
+
 require.alias("component-event/index.js", "analytics/deps/event/index.js");
-
-require.alias("component-json/index.js", "analytics/deps/json/index.js");
-
-require.alias("component-json-fallback/index.js", "analytics/deps/json-fallback/index.js");
+require.alias("component-event/index.js", "event/index.js");
 
 require.alias("component-object/index.js", "analytics/deps/object/index.js");
+require.alias("component-object/index.js", "object/index.js");
 
 require.alias("component-querystring/index.js", "analytics/deps/querystring/index.js");
+require.alias("component-querystring/index.js", "querystring/index.js");
 require.alias("component-trim/index.js", "component-querystring/deps/trim/index.js");
 
-require.alias("redventures-reduce/index.js", "component-querystring/deps/reduce/index.js");
-
-require.alias("component-type/index.js", "analytics/deps/type/index.js");
-
 require.alias("component-url/index.js", "analytics/deps/url/index.js");
+require.alias("component-url/index.js", "url/index.js");
+
+require.alias("ianstormtaylor-bind/index.js", "analytics/deps/bind/index.js");
+require.alias("ianstormtaylor-bind/index.js", "bind/index.js");
+require.alias("component-bind/index.js", "ianstormtaylor-bind/deps/bind/index.js");
+
+require.alias("segmentio-bind-all/index.js", "ianstormtaylor-bind/deps/bind-all/index.js");
+require.alias("component-bind/index.js", "segmentio-bind-all/deps/bind/index.js");
+
+require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js");
+
+require.alias("ianstormtaylor-callback/index.js", "analytics/deps/callback/index.js");
+require.alias("ianstormtaylor-callback/index.js", "callback/index.js");
+require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "analytics/deps/is/index.js");
+require.alias("ianstormtaylor-is/index.js", "is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
 
 require.alias("segmentio-after/index.js", "analytics/deps/after/index.js");
+require.alias("segmentio-after/index.js", "after/index.js");
 
-require.alias("segmentio-alias/index.js", "analytics/deps/alias/index.js");
+require.alias("segmentio-analytics.js-integration/lib/index.js", "analytics/deps/integration/lib/index.js");
+require.alias("segmentio-analytics.js-integration/lib/protos.js", "analytics/deps/integration/lib/protos.js");
+require.alias("segmentio-analytics.js-integration/lib/statics.js", "analytics/deps/integration/lib/statics.js");
+require.alias("segmentio-analytics.js-integration/lib/index.js", "analytics/deps/integration/index.js");
+require.alias("segmentio-analytics.js-integration/lib/index.js", "integration/index.js");
+require.alias("avetisk-defaults/index.js", "segmentio-analytics.js-integration/deps/defaults/index.js");
 
-require.alias("segmentio-extend/index.js", "analytics/deps/extend/index.js");
+require.alias("component-clone/index.js", "segmentio-analytics.js-integration/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
 
-require.alias("segmentio-is-email/index.js", "analytics/deps/is-email/index.js");
+require.alias("component-emitter/index.js", "segmentio-analytics.js-integration/deps/emitter/index.js");
+require.alias("component-indexof/index.js", "component-emitter/deps/indexof/index.js");
 
-require.alias("segmentio-load-script/index.js", "analytics/deps/load-script/index.js");
+require.alias("ianstormtaylor-bind/index.js", "segmentio-analytics.js-integration/deps/bind/index.js");
+require.alias("component-bind/index.js", "ianstormtaylor-bind/deps/bind/index.js");
+
+require.alias("segmentio-bind-all/index.js", "ianstormtaylor-bind/deps/bind-all/index.js");
+require.alias("component-bind/index.js", "segmentio-bind-all/deps/bind/index.js");
+
+require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js");
+
+require.alias("ianstormtaylor-callback/index.js", "segmentio-analytics.js-integration/deps/callback/index.js");
+require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
+
+require.alias("segmentio-after/index.js", "segmentio-analytics.js-integration/deps/after/index.js");
+
+require.alias("timoxley-next-tick/index.js", "segmentio-analytics.js-integration/deps/next-tick/index.js");
+
+require.alias("yields-slug/index.js", "segmentio-analytics.js-integration/deps/slug/index.js");
+
+require.alias("visionmedia-debug/index.js", "segmentio-analytics.js-integration/deps/debug/index.js");
+require.alias("visionmedia-debug/debug.js", "segmentio-analytics.js-integration/deps/debug/debug.js");
+
+require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integration/index.js");
+require.alias("segmentio-analytics.js-integrations/index.js", "analytics/deps/integrations/index.js");
+require.alias("segmentio-analytics.js-integrations/lib/google-analytics.js", "analytics/deps/integrations/lib/google-analytics.js");
+require.alias("segmentio-analytics.js-integrations/lib/intercom.js", "analytics/deps/integrations/lib/intercom.js");
+require.alias("segmentio-analytics.js-integrations/lib/keen-io.js", "analytics/deps/integrations/lib/keen-io.js");
+require.alias("segmentio-analytics.js-integrations/lib/kissmetrics.js", "analytics/deps/integrations/lib/kissmetrics.js");
+require.alias("segmentio-analytics.js-integrations/lib/mixpanel.js", "analytics/deps/integrations/lib/mixpanel.js");
+require.alias("segmentio-analytics.js-integrations/index.js", "integrations/index.js");
+require.alias("component-clone/index.js", "segmentio-analytics.js-integrations/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-domify/index.js", "segmentio-analytics.js-integrations/deps/domify/index.js");
+
+require.alias("component-each/index.js", "segmentio-analytics.js-integrations/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("component-once/index.js", "segmentio-analytics.js-integrations/deps/once/index.js");
+
+require.alias("component-type/index.js", "segmentio-analytics.js-integrations/deps/type/index.js");
+
+require.alias("component-url/index.js", "segmentio-analytics.js-integrations/deps/url/index.js");
+
+require.alias("ianstormtaylor-callback/index.js", "segmentio-analytics.js-integrations/deps/callback/index.js");
+require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
+
+require.alias("ianstormtaylor-bind/index.js", "segmentio-analytics.js-integrations/deps/bind/index.js");
+require.alias("component-bind/index.js", "ianstormtaylor-bind/deps/bind/index.js");
+
+require.alias("segmentio-bind-all/index.js", "ianstormtaylor-bind/deps/bind-all/index.js");
+require.alias("component-bind/index.js", "segmentio-bind-all/deps/bind/index.js");
+
+require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "segmentio-analytics.js-integrations/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-alias/index.js", "segmentio-analytics.js-integrations/deps/alias/index.js");
+require.alias("component-clone/index.js", "segmentio-alias/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-type/index.js", "segmentio-alias/deps/type/index.js");
+
+require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integrations/deps/integration/lib/index.js");
+require.alias("segmentio-analytics.js-integration/lib/protos.js", "segmentio-analytics.js-integrations/deps/integration/lib/protos.js");
+require.alias("segmentio-analytics.js-integration/lib/statics.js", "segmentio-analytics.js-integrations/deps/integration/lib/statics.js");
+require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integrations/deps/integration/index.js");
+require.alias("avetisk-defaults/index.js", "segmentio-analytics.js-integration/deps/defaults/index.js");
+
+require.alias("component-clone/index.js", "segmentio-analytics.js-integration/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-emitter/index.js", "segmentio-analytics.js-integration/deps/emitter/index.js");
+require.alias("component-indexof/index.js", "component-emitter/deps/indexof/index.js");
+
+require.alias("ianstormtaylor-bind/index.js", "segmentio-analytics.js-integration/deps/bind/index.js");
+require.alias("component-bind/index.js", "ianstormtaylor-bind/deps/bind/index.js");
+
+require.alias("segmentio-bind-all/index.js", "ianstormtaylor-bind/deps/bind-all/index.js");
+require.alias("component-bind/index.js", "segmentio-bind-all/deps/bind/index.js");
+
+require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js");
+
+require.alias("ianstormtaylor-callback/index.js", "segmentio-analytics.js-integration/deps/callback/index.js");
+require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
+
+require.alias("segmentio-after/index.js", "segmentio-analytics.js-integration/deps/after/index.js");
+
+require.alias("timoxley-next-tick/index.js", "segmentio-analytics.js-integration/deps/next-tick/index.js");
+
+require.alias("yields-slug/index.js", "segmentio-analytics.js-integration/deps/slug/index.js");
+
+require.alias("visionmedia-debug/index.js", "segmentio-analytics.js-integration/deps/debug/index.js");
+require.alias("visionmedia-debug/debug.js", "segmentio-analytics.js-integration/deps/debug/debug.js");
+
+require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integration/index.js");
+require.alias("segmentio-canonical/index.js", "segmentio-analytics.js-integrations/deps/canonical/index.js");
+
+require.alias("segmentio-convert-dates/index.js", "segmentio-analytics.js-integrations/deps/convert-dates/index.js");
+require.alias("component-clone/index.js", "segmentio-convert-dates/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "segmentio-convert-dates/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-extend/index.js", "segmentio-analytics.js-integrations/deps/extend/index.js");
+
+require.alias("segmentio-global-queue/index.js", "segmentio-analytics.js-integrations/deps/global-queue/index.js");
+
+require.alias("segmentio-is-email/index.js", "segmentio-analytics.js-integrations/deps/is-email/index.js");
+
+require.alias("segmentio-load-date/index.js", "segmentio-analytics.js-integrations/deps/load-date/index.js");
+
+require.alias("segmentio-load-script/index.js", "segmentio-analytics.js-integrations/deps/load-script/index.js");
 require.alias("component-type/index.js", "segmentio-load-script/deps/type/index.js");
 
+require.alias("segmentio-on-body/index.js", "segmentio-analytics.js-integrations/deps/on-body/index.js");
+require.alias("component-each/index.js", "segmentio-on-body/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("segmentio-on-error/index.js", "segmentio-analytics.js-integrations/deps/on-error/index.js");
+
+require.alias("segmentio-to-unix-timestamp/index.js", "segmentio-analytics.js-integrations/deps/to-unix-timestamp/index.js");
+
+require.alias("segmentio-use-https/index.js", "segmentio-analytics.js-integrations/deps/use-https/index.js");
+
+require.alias("timoxley-next-tick/index.js", "segmentio-analytics.js-integrations/deps/next-tick/index.js");
+
+require.alias("yields-slug/index.js", "segmentio-analytics.js-integrations/deps/slug/index.js");
+
+require.alias("visionmedia-batch/index.js", "segmentio-analytics.js-integrations/deps/batch/index.js");
+require.alias("component-emitter/index.js", "visionmedia-batch/deps/emitter/index.js");
+require.alias("component-indexof/index.js", "component-emitter/deps/indexof/index.js");
+
+require.alias("visionmedia-debug/index.js", "segmentio-analytics.js-integrations/deps/debug/index.js");
+require.alias("visionmedia-debug/debug.js", "segmentio-analytics.js-integrations/deps/debug/debug.js");
+
 require.alias("segmentio-canonical/index.js", "analytics/deps/canonical/index.js");
+require.alias("segmentio-canonical/index.js", "canonical/index.js");
 
-require.alias("analytics/src/index.js", "analytics/index.js");
+require.alias("segmentio-extend/index.js", "analytics/deps/extend/index.js");
+require.alias("segmentio-extend/index.js", "extend/index.js");
 
-if (typeof exports == "object") {
+require.alias("segmentio-is-email/index.js", "analytics/deps/is-email/index.js");
+require.alias("segmentio-is-email/index.js", "is-email/index.js");
+
+require.alias("segmentio-is-meta/index.js", "analytics/deps/is-meta/index.js");
+require.alias("segmentio-is-meta/index.js", "is-meta/index.js");
+
+require.alias("segmentio-isodate-traverse/index.js", "analytics/deps/isodate-traverse/index.js");
+require.alias("segmentio-isodate-traverse/index.js", "isodate-traverse/index.js");
+require.alias("component-clone/index.js", "segmentio-isodate-traverse/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-each/index.js", "segmentio-isodate-traverse/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "segmentio-isodate-traverse/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-isodate-traverse/deps/isodate/index.js");
+
+require.alias("segmentio-json/index.js", "analytics/deps/json/index.js");
+require.alias("segmentio-json/index.js", "json/index.js");
+require.alias("component-json-fallback/index.js", "segmentio-json/deps/json-fallback/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "analytics/deps/new-date/lib/index.js");
+require.alias("segmentio-new-date/lib/milliseconds.js", "analytics/deps/new-date/lib/milliseconds.js");
+require.alias("segmentio-new-date/lib/seconds.js", "analytics/deps/new-date/lib/seconds.js");
+require.alias("segmentio-new-date/lib/index.js", "analytics/deps/new-date/index.js");
+require.alias("segmentio-new-date/lib/index.js", "new-date/index.js");
+require.alias("ianstormtaylor-is/index.js", "segmentio-new-date/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-new-date/deps/isodate/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "segmentio-new-date/index.js");
+require.alias("segmentio-store.js/store.js", "analytics/deps/store/store.js");
+require.alias("segmentio-store.js/store.js", "analytics/deps/store/index.js");
+require.alias("segmentio-store.js/store.js", "store/index.js");
+require.alias("segmentio-store.js/store.js", "segmentio-store.js/index.js");
+require.alias("segmentio-top-domain/index.js", "analytics/deps/top-domain/index.js");
+require.alias("segmentio-top-domain/index.js", "analytics/deps/top-domain/index.js");
+require.alias("segmentio-top-domain/index.js", "top-domain/index.js");
+require.alias("component-url/index.js", "segmentio-top-domain/deps/url/index.js");
+
+require.alias("segmentio-top-domain/index.js", "segmentio-top-domain/index.js");
+require.alias("yields-prevent/index.js", "analytics/deps/prevent/index.js");
+require.alias("yields-prevent/index.js", "prevent/index.js");
+
+require.alias("visionmedia-debug/index.js", "analytics/deps/debug/index.js");
+require.alias("visionmedia-debug/debug.js", "analytics/deps/debug/debug.js");
+require.alias("visionmedia-debug/index.js", "debug/index.js");
+
+require.alias("analytics/lib/index.js", "analytics/index.js");if (typeof exports == "object") {
   module.exports = require("analytics");
 } else if (typeof define == "function" && define.amd) {
   define(function(){ return require("analytics"); });
 } else {
-  window["analytics"] = require("analytics");
+  this["analytics"] = require("analytics");
 }})();
