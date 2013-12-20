@@ -2297,7 +2297,7 @@ var integrations = [
   // 'livechat',
   // 'lucky-orange',
   // 'lytics',
-  'mixpanel',
+  'mixpanel'
   // 'mousestats',
   // 'olark',
   // 'optimizely',
