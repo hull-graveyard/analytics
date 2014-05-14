@@ -1,12 +1,15 @@
 
 describe('group', function () {
 
-  var assert = require('assert');
-  var cookie = require('analytics/lib/cookie');
-  var equal = require('equals');
-  var json = require('segmentio-json');
-  var store = require('analytics/lib/store');
-  var group = require('analytics/lib/group');
+  var analytics = window.analytics;
+  var require = analytics.require;
+  var assert = dev('assert');
+  var cookie = require('./cookie');
+  var equal = dev('equals');
+  var json = require('json');
+  var store = require('./store');
+  var group = require('./group');
+  var Group = group.Group;
 
   var cookieKey = group._options.cookie.key;
   var localStorageKey = group._options.localStorage.key;
@@ -20,6 +23,19 @@ describe('group', function () {
     cookie.remove(cookieKey);
     store.remove(localStorageKey);
   });
+
+  describe('()', function(){
+    beforeEach(function(){
+      cookie.set(cookieKey, 'gid');
+      store.set(localStorageKey, { trait: true });
+    })
+
+    it('should not reset group id and traits', function(){
+      var group = new Group;
+      assert('gid' == group.id());
+      assert(true == group.traits().trait);
+    })
+  })
 
   describe('#id', function () {
     it('should get an id from the cookie', function () {
@@ -57,19 +73,19 @@ describe('group', function () {
 
     it('should get a copy of properties', function () {
       store.set(localStorageKey, { property: true });
-      assert(group._properties != group.properties());
+      assert(group._traits != group.properties());
     });
 
     it('should get properties when not persisting', function () {
       group.options({ persist: false });
-      group._properties = { property: true };
+      group._traits = { property: true };
       assert(equal({ property: true }, group.properties()));
     });
 
     it('should get a copy of properties when not persisting', function () {
       group.options({ persist: false });
-      group._properties = { property: true };
-      assert(group._properties != group.properties());
+      group._traits = { property: true };
+      assert(group._traits != group.properties());
     });
 
     it('should set properties', function () {
@@ -80,7 +96,7 @@ describe('group', function () {
     it('should set the id when not persisting', function () {
       group.options({ persist: false });
       group.properties({ property: true });
-      assert(equal({ property: true }, group._properties));
+      assert(equal({ property: true }, group._traits));
     });
 
     it('should default properties to an empty object', function () {
@@ -91,7 +107,7 @@ describe('group', function () {
     it('should default properties to an empty object when not persisting', function () {
       group.options({ persist: false });
       group.properties(null);
-      assert(equal({}, group._properties));
+      assert(equal({}, group._traits));
     });
 
     it('should be an empty object by default', function () {

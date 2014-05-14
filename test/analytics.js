@@ -1,20 +1,28 @@
 
 describe('Analytics', function () {
 
-  var Analytics = require('analytics/lib/analytics');
-  var assert = require('assert');
+  var analytics = window.analytics;
+  var require = analytics.require;
+  var Analytics = require('./analytics');
+  var assert = dev('assert');
   var bind = require('event').bind;
-  var cookie = require('analytics/lib/cookie');
-  var equal = require('equals');
-  var group = require('analytics/lib/group');
+  var cookie = require('./cookie');
+  var equal = dev('equals');
+  var group = require('./group');
   var is = require('is');
-  var jQuery = require('jquery');
-  var createIntegration = require('integration');
-  var sinon = require('sinon');
-  var store = require('analytics/lib/store');
-  var tick = require('next-tick');
-  var trigger = require('trigger-event');
-  var user = require('analytics/lib/user');
+  var jQuery = dev('jquery');
+  var createIntegration = dev('integration');
+  var sinon = dev('sinon');
+  var store = require('./store');
+  var tick = dev('next-tick');
+  var trigger = dev('trigger-event');
+  var user = require('./user');
+  var Facade = require('facade');
+  var Identify = Facade.Identify;
+  var Group = Facade.Group;
+  var Track = Facade.Track;
+  var Alias = Facade.Alias;
+  var Page = Facade.Page;
 
   var analytics;
   var Test;
@@ -214,28 +222,39 @@ describe('Analytics', function () {
       analytics.initialize(settings);
     });
 
-    it('should invoke a method on an integration', function () {
-      analytics._invoke('identify', 'id', { trait: true });
-      assert(Test.prototype.invoke.calledWith('identify', 'id', { trait: true }));
-    });
-
-    it('should clone arguments before invoking each integration', function () {
-      var traits = { foo: 1 };
-      analytics._invoke('identify', 'id', traits);
-      assert(Test.prototype.invoke.calledWith('identify', 'id', traits));
-      assert(Test.prototype.invoke.args[0][2].foo == 1);
-      assert(Test.prototype.invoke.args[0][2] != traits);
-    });
+    it('should invoke a method on integration with facade', function(){
+      var a = new Identify({ userId: 'id', traits: { trait: true } });
+      analytics._invoke('identify', a);
+      var b = Test.prototype.invoke.args[0][1];
+      assert(b == a);
+      assert('id' == b.userId());
+      assert(true == b.traits().trait);
+    })
 
     it('shouldnt call a method when the `all` option is false', function () {
-      analytics._invoke('identify', { providers: { all: false }});
+      var opts = { providers: { all: false } };
+      var facade = new Facade({ options: opts });
+      analytics._invoke('identify', facade);
       assert(!Test.prototype.invoke.called);
     });
 
     it('shouldnt call a method when the integration option is false', function () {
-      analytics._invoke('identify', { providers: { Test: false }});
+      var opts = { providers: { Test: false } };
+      var facade = new Facade({ options: opts });
+      analytics._invoke('identify', facade);
       assert(!Test.prototype.invoke.called);
     });
+
+    it('should emit "invoke" with facade', function(done){
+      var opts = { All: false };
+      var identify = new Identify({ options: opts });
+      analytics.on('invoke', function(msg){
+        assert(identify == msg);
+        assert('identify' == msg.action());
+        done();
+      });
+      analytics._invoke('identify', identify);
+    })
   });
 
   describe('#_options', function () {
@@ -294,14 +313,16 @@ describe('Analytics', function () {
   });
 
   describe('#page', function () {
-    var properties = {
-      path: window.location.pathname,
-      referrer: document.referrer,
-      title: document.title,
-      url: window.location.href
-    };
+    var defaults;
 
     beforeEach(function () {
+      defaults = {
+        path: window.location.pathname,
+        referrer: document.referrer,
+        title: document.title,
+        url: window.location.href,
+        search: window.location.search
+      };
       sinon.spy(analytics, '_invoke');
     });
 
@@ -310,73 +331,143 @@ describe('Analytics', function () {
       assert(analytics._invoke.calledWith('page'));
     });
 
-    it('should back properties with defaults', function () {
-      analytics.page('category', 'name', {});
-      assert(analytics._invoke.calledWith('page', 'category', 'name', properties));
+    it('should call #_invoke with Page instance', function(){
+      analytics.page();
+      var page = analytics._invoke.args[0][1];
+      assert(page instanceof Page);
+    })
+
+    it('should default .url to .location.href', function(){
+      analytics.page();
+      var page = analytics._invoke.args[0][1];
+      var href = window.location.href;
+      assert(href == page.properties().url);
     });
 
+    it('should respect canonical', function(){
+      var el = document.createElement('link');
+      el.rel = 'canonical';
+      el.href = 'baz.com';
+      document.head.appendChild(el);
+      analytics.page();
+      var page = analytics._invoke.args[0][1];
+      assert('baz.com' == page.properties().url);
+      el.parentNode.removeChild(el);
+    });
+
+    it('should append querystring to canonical url', function(){
+      var el = document.createElement('link');
+      el.rel = 'canonical';
+      el.href = 'baz.com';
+      document.head.appendChild(el);
+      analytics.page({ search: '?querystring' });
+      var page = analytics._invoke.args[0][1];
+      assert('baz.com?querystring' == page.properties().url);
+      el.parentNode.removeChild(el);
+    })
+
     it('should accept (category, name, properties, options, callback)', function (done) {
+      defaults.category = 'category';
+      defaults.name = 'name';
       analytics.page('category', 'name', {}, {}, function () {
-        assert(analytics._invoke.calledWith('page', 'category', 'name', properties, {}));
+        var page = analytics._invoke.args[0][1];
+        assert('category' == page.category());
+        assert('name' == page.name());
+        assert('object' == typeof page.properties());
+        assert('object' == typeof page.options());
         done();
       });
     });
 
     it('should accept (category, name, properties, callback)', function (done) {
+      defaults.category = 'category';
+      defaults.name = 'name';
       analytics.page('category', 'name', {}, function () {
-        assert(analytics._invoke.calledWith('page', 'category', 'name', properties));
+        var page = analytics._invoke.args[0][1];
+        assert('category' == page.category());
+        assert('name' == page.name());
+        assert('object' == typeof page.properties());
         done();
       });
     });
 
     it('should accept (category, name, callback)', function (done) {
+      defaults.category = 'category';
+      defaults.name = 'name';
       analytics.page('category', 'name', function () {
-        assert(analytics._invoke.calledWith('page', 'category', 'name', properties));
+        var page = analytics._invoke.args[0][1];
+        assert('category' == page.category());
+        assert('name' == page.name());
         done();
       });
     });
 
     it('should accept (name, properties, options, callback)', function (done) {
+      defaults.name = 'name';
       analytics.page('name', {}, {}, function () {
-        assert(analytics._invoke.calledWith('page', null, 'name', properties, {}));
+        var page = analytics._invoke.args[0][1];
+        assert('name' == page.name());
+        assert('object' == typeof page.properties());
+        assert('object' == typeof page.options());
         done();
       });
     });
 
     it('should accept (name, properties, callback)', function (done) {
+      defaults.name = 'name';
       analytics.page('name', {}, function () {
-        assert(analytics._invoke.calledWith('page', null, 'name', properties));
+        var page = analytics._invoke.args[0][1];
+        assert('name' == page.name());
+        assert('object' == typeof page.properties());
         done();
       });
     });
 
     it('should accept (name, callback)', function (done) {
+      defaults.name = 'name';
       analytics.page('name', function () {
-        assert(analytics._invoke.calledWith('page', null, 'name'));
+        var page = analytics._invoke.args[0][1];
+        assert('name' == page.name());
         done();
       });
     });
 
     it('should accept (properties, options, callback)', function (done) {
       analytics.page({}, {}, function () {
-        assert(analytics._invoke.calledWith('page', null, null, properties, {}));
+        var page = analytics._invoke.args[0][1];
+        assert(null == page.category());
+        assert(null == page.name());
+        assert('object' == typeof page.properties());
+        assert('object' == typeof page.options());
         done();
       });
     });
 
     it('should accept (properties, callback)', function (done) {
       analytics.page({}, function () {
-        assert(analytics._invoke.calledWith('page', null, null, properties));
+        var page = analytics._invoke.args[0][1];
+        assert(null == page.category());
+        assert(null == page.name());
+        assert('object' == typeof page.options());
         done();
       });
     });
 
+    it('should back properties with defaults', function () {
+      defaults.property = true;
+      analytics.page({ property: true });
+      var page = analytics._invoke.args[0][1];
+      assert.deepEqual(defaults, page.properties());
+    });
+
     it('should emit page', function (done) {
+      defaults.category = 'category';
+      defaults.name = 'name';
       analytics.once('page', function (category, name, props, opts) {
         assert('category' === category);
         assert('name' === name);
         assert(equal(opts, {}));
-        assert(equal(props, properties));
+        assert(equal(props, defaults));
         done();
       });
       analytics.page('category', 'name', {}, {});
@@ -409,37 +500,53 @@ describe('Analytics', function () {
       assert(analytics._invoke.calledWith('identify'));
     });
 
+    it('should call #_invoke with Identify', function(){
+      analytics.identify();
+      var identify = analytics._invoke.getCall(0).args[1];
+      assert(identify instanceof Identify);
+    })
+
     it('should accept (id, traits, options, callback)', function (done) {
       analytics.identify('id', {}, {}, function () {
-        assert(analytics._invoke.calledWith('identify', 'id', {}, {}));
+        var identify = analytics._invoke.getCall(0).args[1];
+        assert('id' == identify.userId());
+        assert('object' == typeof identify.traits());
+        assert('object' == typeof identify.options());
         done();
       });
     });
 
     it('should accept (id, traits, callback)', function (done) {
-      analytics.identify('id', {}, function () {
-        assert(analytics._invoke.calledWith('identify', 'id', {}, null));
+      analytics.identify('id', { trait: true }, function () {
+        var identify = analytics._invoke.getCall(0).args[1];
+        assert('id' == identify.userId());
+        assert('object' == typeof identify.traits());
         done();
       });
     });
 
     it('should accept (id, callback)', function (done) {
       analytics.identify('id', function () {
-        assert(analytics._invoke.calledWith('identify', 'id', {}, null));
+        var identify = analytics._invoke.getCall(0).args[1];
+        assert(identify instanceof Identify);
+        assert('id' == identify.userId());
         done();
       });
     });
 
     it('should accept (traits, options, callback)', function (done) {
       analytics.identify({}, {}, function () {
-        assert(analytics._invoke.calledWith('identify', null, {}, {}));
+        var identify = analytics._invoke.getCall(0).args[1];
+        assert('object' == typeof identify.traits());
+        assert('object' == typeof identify.options());
         done();
       });
     });
 
     it('should accept (traits, callback)', function (done) {
       analytics.identify({}, function () {
-        assert(analytics._invoke.calledWith('identify', null, {}));
+        var identify = analytics._invoke.getCall(0).args[1];
+        assert('object' == typeof identify.traits());
         done();
       });
     });
@@ -453,10 +560,12 @@ describe('Analytics', function () {
       user.traits({ one: 1 });
       user.save();
       analytics.identify('id', { two: 2 });
-      assert(analytics._invoke.calledWith('identify', 'id', {
-        one: 1,
-        two: 2
-      }));
+      var call = analytics._invoke.getCall(0);
+      var identify = call.args[1];
+      assert('identify' == call.args[0]);
+      assert('id' == identify.userId());
+      assert(1 == identify.traits().one);
+      assert(2 == identify.traits().two);
     });
 
     it('should emit identify', function (done) {
@@ -473,7 +582,7 @@ describe('Analytics', function () {
       var date = new Date();
       var string = date.getTime().toString();
       analytics.identify({ created: string });
-      var created = analytics._invoke.args[0][2].created;
+      var created = analytics._invoke.args[0][1].created();
       assert(is.date(created));
       assert(created.getTime() === date.getTime());
     });
@@ -482,7 +591,7 @@ describe('Analytics', function () {
       var date = new Date();
       var milliseconds = date.getTime();
       analytics.identify({ created: milliseconds });
-      var created = analytics._invoke.args[0][2].created;
+      var created = analytics._invoke.args[0][1].created();
       assert(is.date(created));
       assert(created.getTime() === milliseconds);
     });
@@ -491,7 +600,8 @@ describe('Analytics', function () {
       var date = new Date();
       var seconds = Math.floor(date.getTime() / 1000);
       analytics.identify({ created: seconds });
-      var created = analytics._invoke.args[0][2].created;
+      var identify = analytics._invoke.args[0][1];
+      var created = identify.created();
       assert(is.date(created));
       assert(created.getTime() === seconds * 1000);
     });
@@ -500,7 +610,8 @@ describe('Analytics', function () {
       var date = new Date();
       var string = date.getTime() + '';
       analytics.identify({ company: { created: string }});
-      var created = analytics._invoke.args[0][2].company.created;
+      var identify = analytics._invoke.args[0][1];
+      var created = identify.companyCreated();
       assert(is.date(created));
       assert(created.getTime() === date.getTime());
     });
@@ -509,7 +620,8 @@ describe('Analytics', function () {
       var date = new Date();
       var milliseconds = date.getTime();
       analytics.identify({ company: { created: milliseconds }});
-      var created = analytics._invoke.args[0][2].company.created;
+      var identify = analytics._invoke.args[0][1];
+      var created = identify.companyCreated();
       assert(is.date(created));
       assert(created.getTime() === milliseconds);
     });
@@ -518,7 +630,8 @@ describe('Analytics', function () {
       var date = new Date();
       var seconds = Math.floor(date.getTime() / 1000);
       analytics.identify({ company: { created: seconds }});
-      var created = analytics._invoke.args[0][2].company.created;
+      var identify = analytics._invoke.args[0][1];
+      var created = identify.companyCreated();
       assert(is.date(created));
       assert(created.getTime() === seconds * 1000);
     });
@@ -549,37 +662,52 @@ describe('Analytics', function () {
       assert(analytics._invoke.calledWith('group'));
     });
 
+    it('should call #_invoke with group facade instance', function(){
+      analytics.group('id');
+      var group = analytics._invoke.args[0][1];
+      assert(group instanceof Group);
+    })
+
     it('should accept (id, properties, options, callback)', function (done) {
       analytics.group('id', {}, {}, function () {
-        assert(analytics._invoke.calledWith('group', 'id', {}, {}));
+        var group = analytics._invoke.args[0][1];
+        assert('id' == group.groupId());
+        assert('object' == typeof group.properties());
+        assert('object' == typeof group.options());
         done();
       });
     });
 
     it('should accept (id, properties, callback)', function (done) {
       analytics.group('id', {}, function () {
-        assert(analytics._invoke.calledWith('group', 'id', {}, null));
+        var group = analytics._invoke.args[0][1];
+        assert('id' == group.groupId());
+        assert('object' == typeof group.properties());
         done();
       });
     });
 
     it('should accept (id, callback)', function (done) {
       analytics.group('id', function () {
-        assert(analytics._invoke.calledWith('group', 'id', {}, null));
+        var group = analytics._invoke.args[0][1];
+        assert('id' == group.groupId());
         done();
       });
     });
 
     it('should accept (properties, options, callback)', function (done) {
       analytics.group({}, {}, function () {
-        assert(analytics._invoke.calledWith('group', null, {}, {}));
+        var group = analytics._invoke.args[0][1];
+        assert('object' == typeof group.properties());
+        assert('object' == typeof group.options());
         done();
       });
     });
 
     it('should accept (properties, callback)', function (done) {
       analytics.group({}, function () {
-        assert(analytics._invoke.calledWith('group', null, {}));
+        var group = analytics._invoke.args[0][1];
+        assert('object' == typeof group.properties());
         done();
       });
     });
@@ -593,10 +721,11 @@ describe('Analytics', function () {
       group.properties({ one: 1 });
       group.save();
       analytics.group('id', { two: 2 });
-      assert(analytics._invoke.calledWith('group', 'id', {
-        one: 1,
-        two: 2
-      }));
+      var g = analytics._invoke.args[0][1];
+      assert('id' == g.groupId());
+      assert('object' == typeof g.properties());
+      assert(1 == g.properties().one);
+      assert(2 == g.properties().two);
     });
 
     it('should emit group', function (done) {
@@ -613,7 +742,8 @@ describe('Analytics', function () {
       var date = new Date();
       var string = date.getTime().toString();
       analytics.group({ created: string });
-      var created = analytics._invoke.args[0][2].created;
+      var g = analytics._invoke.args[0][1];
+      var created = g.created();
       assert(is.date(created));
       assert(created.getTime() === date.getTime());
     });
@@ -622,7 +752,8 @@ describe('Analytics', function () {
       var date = new Date();
       var milliseconds = date.getTime();
       analytics.group({ created: milliseconds });
-      var created = analytics._invoke.args[0][2].created;
+      var g = analytics._invoke.args[0][1];
+      var created = g.created();
       assert(is.date(created));
       assert(created.getTime() === milliseconds);
     });
@@ -631,7 +762,8 @@ describe('Analytics', function () {
       var date = new Date();
       var seconds = Math.floor(date.getTime() / 1000);
       analytics.group({ created: seconds });
-      var created = analytics._invoke.args[0][2].created;
+      var g = analytics._invoke.args[0][1];
+      var created = g.created();
       assert(is.date(created));
       assert(created.getTime() === seconds * 1000);
     });
@@ -647,23 +779,35 @@ describe('Analytics', function () {
       assert(analytics._invoke.calledWith('track'));
     });
 
+    it('should transform arguments into Track', function(){
+      analytics.track();
+      var track = analytics._invoke.getCall(0).args[1];
+      assert(track instanceof Track);
+    })
+
     it('should accept (event, properties, options, callback)', function (done) {
       analytics.track('event', {}, {}, function () {
-        assert(analytics._invoke.calledWith('track', 'event', {}, {}));
+        var track = analytics._invoke.args[0][1];
+        assert('event' == track.event());
+        assert('object' == typeof track.properties());
+        assert('object' == typeof track.options());
         done();
       });
     });
 
     it('should accept (event, properties, callback)', function (done) {
       analytics.track('event', {}, function () {
-        assert(analytics._invoke.calledWith('track', 'event', {}, null));
+        var track = analytics._invoke.args[0][1];
+        assert('event' == track.event());
+        assert('object' == typeof track.properties());
         done();
       });
     });
 
     it('should accept (event, callback)', function (done) {
       analytics.track('event', function () {
-        assert(analytics._invoke.calledWith('track', 'event', {}, null));
+        var track = analytics._invoke.args[0][1];
+        assert('event' == track.event());
         done();
       });
     });
@@ -684,9 +828,9 @@ describe('Analytics', function () {
         date: '2013-10-05T00:00:00.000Z',
         nonDate: '2013'
       });
-      var tracked = analytics._invoke.args[0][2];
-      assert(tracked.date.getTime() === date.getTime());
-      assert(tracked.nonDate === '2013');
+      var track = analytics._invoke.args[0][1];
+      assert(track.properties().date.getTime() === date.getTime());
+      assert(track.properties().nonDate === '2013');
     });
   });
 
@@ -863,23 +1007,37 @@ describe('Analytics', function () {
       assert(analytics._invoke.calledWith('alias'));
     });
 
+    it('should call #_invoke with instanceof Alias', function(){
+      analytics.alias();
+      var alias = analytics._invoke.args[0][1];
+      assert(alias instanceof Alias);
+    })
+
     it('should accept (new, old, options, callback)', function (done) {
       analytics.alias('new', 'old', {}, function () {
-        assert(analytics._invoke.calledWith('alias', 'new', 'old', {}));
+        var alias = analytics._invoke.args[0][1];
+        assert('old' == alias.from());
+        assert('new' == alias.to());
+        assert('object' == typeof alias.options());
         done();
       });
     });
 
     it('should accept (new, old, callback)', function (done) {
       analytics.alias('new', 'old', function () {
-        assert(analytics._invoke.calledWith('alias', 'new', 'old', null));
+        var alias = analytics._invoke.args[0][1];
+        assert('old' == alias.from());
+        assert('new' == alias.to());
+        assert('object' == typeof alias.options());
         done();
       });
     });
 
     it('should accept (new, callback)', function (done) {
       analytics.alias('new', function () {
-        assert(analytics._invoke.calledWith('alias', 'new', null, null));
+        var alias = analytics._invoke.args[0][1];
+        assert('new' == alias.to());
+        assert('object' == typeof alias.options());
         done();
       });
     });
@@ -894,5 +1052,16 @@ describe('Analytics', function () {
       analytics.alias('new', 'old', { opt: true });
     });
   });
+
+  describe('#push', function(){
+    beforeEach(function(){
+      analytics.track = sinon.spy();
+    })
+
+    it('should call methods with args', function(){
+      analytics.push(['track', 'event', { prop: true }]);
+      assert(analytics.track.calledWith('event', { prop: true }));
+    })
+  })
 
 });

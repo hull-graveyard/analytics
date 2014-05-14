@@ -1,9 +1,10 @@
 
 describe('analytics', function () {
 
-  var analytics = require('analytics');
-  var assert = require('assert');
-  var createIntegration = require('integration');
+  var analytics = window.analytics;
+  var require = analytics.require;
+  var assert = dev('assert');
+  var createIntegration = dev('integration');
   var each = require('each');
   var Integrations = require('integrations');
   var is = require('is');

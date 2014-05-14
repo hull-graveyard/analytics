@@ -1,12 +1,15 @@
 
 describe('user', function () {
 
-  var assert = require('assert');
-  var cookie = require('analytics/lib/cookie');
-  var equal = require('equals');
-  var json = require('segmentio-json');
-  var store = require('analytics/lib/store');
-  var user = require('analytics/lib/user');
+  var analytics = window.analytics;
+  var require = analytics.require;
+  var assert = dev('assert');
+  var cookie = require('./cookie');
+  var equal = dev('equals');
+  var json = require('json');
+  var store = require('./store');
+  var user = require('./user');
+  var User = user.User;
 
   var cookieKey = user._options.cookie.key;
   var localStorageKey = user._options.localStorage.key;
@@ -20,6 +23,19 @@ describe('user', function () {
     cookie.remove(cookieKey);
     store.remove(localStorageKey);
   });
+
+  describe('()', function(){
+    beforeEach(function(){
+      cookie.set(cookieKey, 'my id');
+      store.set(localStorageKey, { trait: true });
+    })
+
+    it('should not reset user id and traits', function(){
+      var user = new User;
+      assert('my id' == user.id());
+      assert(true == user.traits().trait);
+    })
+  })
 
   describe('#id', function () {
     it('should get an id from the cookie', function () {

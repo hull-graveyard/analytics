@@ -1,12 +1,12 @@
 <!doctype html>
 <html>
 <head>
-  <title>analytics.js tests</title>
-  <link rel="stylesheet" href="test/server/mocha.css">
+  <title>analytics.js coverage</title>
+  <link rel="stylesheet" href="build/build.css">
   <script src="test/server/mocha.js"></script>
   <script>mocha.setup({ ui: 'bdd' })</script>
-  <script src="analytics.js"></script>
-  <script src='test/build/build.js'></script>
+  <script src="build/build.js"></script>
+  <script>cov = require('coverage')('analytics');</script>
   <script src="test/index.js"></script>
   <script src="test/analytics.js"></script>
   <script src="test/cookie.js"></script>
@@ -15,15 +15,12 @@
   <script src="test/group.js"></script>
 </head>
 <body>
-  <div id="mocha"></div>
+  <div id='coverage'></div>
+  <div id="mocha" style='display:none;'></div>
   <script>
-    if (window.mochaPhantomJS) {
-      mochaPhantomJS.run();
-      analytics.require('debug').disable();
-    } else {
-      dev('gravy')(mocha.run());
-      analytics.require('debug').enable('*');
-    }
+    mocha.run(function(){
+      cov.render();
+    });
   </script>
 </body>
 </html>

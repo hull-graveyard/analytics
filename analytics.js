@@ -27,10 +27,14 @@ function require(path, parent, orig) {
   // perform real require()
   // by invoking the module's
   // registered function
-  if (!module.exports) {
-    module.exports = {};
-    module.client = module.component = true;
-    module.call(this, module.exports, require.relative(resolved), module);
+  if (!module._resolving && !module.exports) {
+    var mod = {};
+    mod.exports = {};
+    mod.client = mod.component = true;
+    module._resolving = true;
+    module.call(this, mod.exports, require.relative(resolved), mod);
+    delete module._resolving;
+    module.exports = mod.exports;
   }
 
   return module.exports;
@@ -197,32 +201,20 @@ require.relative = function(parent) {
   return localRequire;
 };
 require.register("avetisk-defaults/index.js", function(exports, require, module){
-'use strict';
-
 /**
- * Merge default values.
- *
- * @param {Object} dest
- * @param {Object} defaults
- * @return {Object}
- * @api public
+ * Expose `defaults`.
  */
-var defaults = function (dest, src, recursive) {
-  for (var prop in src) {
-    if (recursive && dest[prop] instanceof Object && src[prop] instanceof Object) {
-      dest[prop] = defaults(dest[prop], src[prop], true);
-    } else if (! (prop in dest)) {
-      dest[prop] = src[prop];
+module.exports = defaults;
+
+function defaults (dest, defaults) {
+  for (var prop in defaults) {
+    if (! (prop in dest)) {
+      dest[prop] = defaults[prop];
     }
   }
 
   return dest;
 };
-
-/**
- * Expose `defaults`.
- */
-module.exports = defaults;
 
 });
 require.register("component-type/index.js", function(exports, require, module){
@@ -725,6 +717,15 @@ exports.unbind = function(el, type, fn, capture){
 };
 
 });
+require.register("component-inherit/index.js", function(exports, require, module){
+
+module.exports = function(a, b){
+  var fn = function(){};
+  fn.prototype = b.prototype;
+  a.prototype = new fn;
+  a.prototype.constructor = a;
+};
+});
 require.register("component-object/index.js", function(exports, require, module){
 
 /**
@@ -837,7 +838,10 @@ require.register("component-querystring/index.js", function(exports, require, mo
  * Module dependencies.
  */
 
+var encode = encodeURIComponent;
+var decode = decodeURIComponent;
 var trim = require('trim');
+var type = require('type');
 
 /**
  * Parse the given query `str`.
@@ -852,14 +856,24 @@ exports.parse = function(str){
 
   str = trim(str);
   if ('' == str) return {};
+  if ('?' == str.charAt(0)) str = str.slice(1);
 
   var obj = {};
   var pairs = str.split('&');
   for (var i = 0; i < pairs.length; i++) {
     var parts = pairs[i].split('=');
+    var key = decode(parts[0]);
+    var m;
+
+    if (m = /(\w+)\[(\d+)\]/.exec(key)) {
+      obj[m[1]] = obj[m[1]] || [];
+      obj[m[1]][m[2]] = decode(parts[1]);
+      continue;
+    }
+
     obj[parts[0]] = null == parts[1]
       ? ''
-      : decodeURIComponent(parts[1]);
+      : decode(parts[1]);
   }
 
   return obj;
@@ -876,9 +890,20 @@ exports.parse = function(str){
 exports.stringify = function(obj){
   if (!obj) return '';
   var pairs = [];
+
   for (var key in obj) {
-    pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(obj[key]));
+    var value = obj[key];
+
+    if ('array' == type(value)) {
+      for (var i = 0; i < value.length; ++i) {
+        pairs.push(encode(key + '[' + i + ']') + '=' + encode(value[i]));
+      }
+      continue;
+    }
+
+    pairs.push(encode(key) + '=' + encode(obj[key]));
   }
+
   return pairs.join('&');
 };
 
@@ -951,7 +976,6 @@ exports.isCrossDomain = function(url){
 };
 });
 require.register("component-bind/index.js", function(exports, require, module){
-
 /**
  * Slice reference.
  */
@@ -970,7 +994,7 @@ var slice = [].slice;
 module.exports = function(obj, fn){
   if ('string' == typeof fn) fn = obj[fn];
   if ('function' != typeof fn) throw new Error('bind() requires a function');
-  var args = [].slice.call(arguments, 2);
+  var args = slice.call(arguments, 2);
   return function(){
     return fn.apply(obj, args.concat(slice.call(arguments)));
   }
@@ -997,8 +1021,13 @@ module.exports = function (obj) {
 });
 require.register("ianstormtaylor-bind/index.js", function(exports, require, module){
 
-var bind = require('bind')
-  , bindAll = require('bind-all');
+try {
+  var bind = require('bind');
+} catch (e) {
+  var bind = require('bind-component');
+}
+
+var bindAll = require('bind-all');
 
 
 /**
@@ -1150,8 +1179,13 @@ function isEmpty (val) {
 });
 require.register("ianstormtaylor-is/index.js", function(exports, require, module){
 
-var isEmpty = require('is-empty')
-  , typeOf = require('type');
+var isEmpty = require('is-empty');
+
+try {
+  var typeOf = require('type');
+} catch (e) {
+  var typeOf = require('component-type');
+}
 
 
 /**
@@ -1234,370 +1268,6 @@ module.exports = function after (times, func) {
   };
 };
 });
-require.register("yields-slug/index.js", function(exports, require, module){
-
-/**
- * Generate a slug from the given `str`.
- *
- * example:
- *
- *        generate('foo bar');
- *        // > foo-bar
- *
- * @param {String} str
- * @param {Object} options
- * @config {String|RegExp} [replace] characters to replace, defaulted to `/[^a-z0-9]/g`
- * @config {String} [separator] separator to insert, defaulted to `-`
- * @return {String}
- */
-
-module.exports = function (str, options) {
-  options || (options = {});
-  return str.toLowerCase()
-    .replace(options.replace || /[^a-z0-9]/g, ' ')
-    .replace(/^ +| +$/g, '')
-    .replace(/ +/g, options.separator || '-')
-};
-
-});
-require.register("segmentio-analytics.js-integration/lib/index.js", function(exports, require, module){
-
-var bind = require('bind');
-var callback = require('callback');
-var clone = require('clone');
-var debug = require('debug');
-var defaults = require('defaults');
-var protos = require('./protos');
-var slug = require('slug');
-var statics = require('./statics');
-
-
-/**
- * Expose `createIntegration`.
- */
-
-module.exports = createIntegration;
-
-
-/**
- * Create a new Integration constructor.
- *
- * @param {String} name
- */
-
-function createIntegration (name) {
-
-  /**
-   * Initialize a new `Integration`.
-   *
-   * @param {Object} options
-   */
-
-  function Integration (options) {
-    this.debug = debug('analytics:integration:' + slug(name));
-    this.options = defaults(clone(options) || {}, this.defaults);
-    this._queue = [];
-    this.once('ready', bind(this, this.flush));
-
-    Integration.emit('construct', this);
-    this._wrapInitialize();
-    this._wrapLoad();
-    this._wrapPage();
-  }
-
-  Integration.prototype.defaults = {};
-  Integration.prototype.globals = [];
-  Integration.prototype.name = name;
-  for (var key in statics) Integration[key] = statics[key];
-  for (var key in protos) Integration.prototype[key] = protos[key];
-  return Integration;
-}
-});
-require.register("segmentio-analytics.js-integration/lib/protos.js", function(exports, require, module){
-
-var after = require('after');
-var callback = require('callback');
-var Emitter = require('emitter');
-var tick = require('next-tick');
-
-
-/**
- * Mixin emitter.
- */
-
-Emitter(exports);
-
-
-/**
- * Initialize.
- */
-
-exports.initialize = function () {
-  this.load();
-};
-
-
-/**
- * Loaded?
- *
- * @return {Boolean}
- * @api private
- */
-
-exports.loaded = function () {
-  return false;
-};
-
-
-/**
- * Load.
- *
- * @param {Function} cb
- */
-
-exports.load = function (cb) {
-  callback.async(cb);
-};
-
-
-/**
- * Page.
- *
- * @param {String} category (optional)
- * @param {String} name (optional)
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
- */
-
-exports.page = function (category, name, properties, options) {};
-
-
-/**
- * Invoke a `method` that may or may not exist on the prototype with `args`,
- * queueing or not depending on whether the integration is "ready". Don't
- * trust the method call, since it contains integration party code.
- *
- * @param {String} method
- * @param {Mixed} args...
- * @api private
- */
-
-exports.invoke = function (method) {
-  if (!this[method]) return;
-  var args = [].slice.call(arguments, 1);
-  if (!this._ready) return this.queue(method, args);
-
-  try {
-    this.debug('%s with %o', method, args);
-    this[method].apply(this, args);
-  } catch (e) {
-    this.debug('error %o calling %s with %o', e, method, args);
-  }
-};
-
-
-/**
- * Queue a `method` with `args`. If the integration assumes an initial
- * pageview, then let the first call to `page` pass through.
- *
- * @param {String} method
- * @param {Array} args
- * @api private
- */
-
-exports.queue = function (method, args) {
-  if ('page' == method && this._assumesPageview && !this._initialized) {
-    return this.page.apply(this, args);
-  }
-
-  this._queue.push({ method: method, args: args });
-};
-
-
-/**
- * Flush the internal queue.
- *
- * @api private
- */
-
-exports.flush = function () {
-  this._ready = true;
-  var call;
-  while (call = this._queue.shift()) this[call.method].apply(this, call.args);
-};
-
-
-/**
- * Reset the integration, removing its global variables.
- *
- * @api private
- */
-
-exports.reset = function () {
-  for (var i = 0, key; key = this.globals[i]; i++) window[key] = undefined;
-};
-
-
-/**
- * Wrap the initialize method in an exists check, so we don't have to do it for
- * every single integration.
- *
- * @api private
- */
-
-exports._wrapInitialize = function () {
-  var initialize = this.initialize;
-  this.initialize = function () {
-    this.debug('initialize');
-    this._initialized = true;
-    initialize.apply(this, arguments);
-    this.emit('initialize');
-
-    var self = this;
-    if (this._readyOnInitialize) {
-      tick(function () {
-        self.emit('ready');
-      });
-    }
-  };
-
-  if (this._assumesPageview) this.initialize = after(2, this.initialize);
-};
-
-
-/**
- * Wrap the load method in `debug` calls, so every integration gets them
- * automatically.
- *
- * @api private
- */
-
-exports._wrapLoad = function () {
-  var load = this.load;
-  this.load = function (callback) {
-    var self = this;
-    this.debug('loading');
-
-    if (this.loaded()) {
-      this.debug('already loaded');
-      if (self._readyOnLoad) {
-        tick(function () {
-          self.emit('ready');
-          callback && callback();
-        });
-      }
-      return;
-    }
-
-    load.call(this, function (err, e) {
-      self.debug('loaded');
-      self.emit('load');
-      if (self._readyOnLoad) self.emit('ready');
-      callback && callback(err, e);
-    });
-  };
-};
-
-
-/**
- * Wrap the page method to call `initialize` instead if the integration assumes
- * a pageview.
- *
- * @api private
- */
-
-exports._wrapPage = function () {
-  var page = this.page;
-  this.page = function () {
-    if (this._assumesPageview && !this._initialized) {
-      return this.initialize({
-        category: arguments[0],
-        name: arguments[1],
-        properties: arguments[2],
-        options: arguments[3]
-      });
-    }
-    page.apply(this, arguments);
-  };
-};
-});
-require.register("segmentio-analytics.js-integration/lib/statics.js", function(exports, require, module){
-
-var after = require('after');
-var Emitter = require('emitter');
-
-
-/**
- * Mixin emitter.
- */
-
-Emitter(exports);
-
-
-/**
- * Add a new option to the integration by `key` with default `value`.
- *
- * @param {String} key
- * @param {Mixed} value
- * @return {Integration}
- */
-
-exports.option = function (key, value) {
-  this.prototype.defaults[key] = value;
-  return this;
-};
-
-
-/**
- * Register a new global variable `key` owned by the integration, which will be
- * used to test whether the integration is already on the page.
- *
- * @param {String} global
- * @return {Integration}
- */
-
-exports.global = function (key) {
-  this.prototype.globals.push(key);
-  return this;
-};
-
-
-/**
- * Mark the integration as assuming an initial pageview, so to defer loading
- * the script until the first `page` call, noop the first `initialize`.
- *
- * @return {Integration}
- */
-
-exports.assumesPageview = function () {
-  this.prototype._assumesPageview = true;
-  return this;
-};
-
-
-/**
- * Mark the integration as being "ready" once `load` is called.
- *
- * @return {Integration}
- */
-
-exports.readyOnLoad = function () {
-  this.prototype._readyOnLoad = true;
-  return this;
-};
-
-
-/**
- * Mark the integration as being "ready" once `load` is called.
- *
- * @return {Integration}
- */
-
-exports.readyOnInitialize = function () {
-  this.prototype._readyOnInitialize = true;
-  return this;
-};
-});
 require.register("component-domify/index.js", function(exports, require, module){
 
 /**
@@ -1611,20 +1281,32 @@ module.exports = parse;
  */
 
 var map = {
-  option: [1, '<select multiple="multiple">', '</select>'],
-  optgroup: [1, '<select multiple="multiple">', '</select>'],
   legend: [1, '<fieldset>', '</fieldset>'],
-  thead: [1, '<table>', '</table>'],
-  tbody: [1, '<table>', '</table>'],
-  tfoot: [1, '<table>', '</table>'],
-  colgroup: [1, '<table>', '</table>'],
-  caption: [1, '<table>', '</table>'],
   tr: [2, '<table><tbody>', '</tbody></table>'],
-  td: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
-  th: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
   col: [2, '<table><tbody></tbody><colgroup>', '</colgroup></table>'],
   _default: [0, '', '']
 };
+
+map.td =
+map.th = [3, '<table><tbody><tr>', '</tr></tbody></table>'];
+
+map.option =
+map.optgroup = [1, '<select multiple="multiple">', '</select>'];
+
+map.thead =
+map.tbody =
+map.colgroup =
+map.caption =
+map.tfoot = [1, '<table>', '</table>'];
+
+map.text =
+map.circle =
+map.ellipse =
+map.line =
+map.path =
+map.polygon =
+map.polyline =
+map.rect = [1, '<svg xmlns="http://www.w3.org/2000/svg" version="1.1">','</svg>'];
 
 /**
  * Parse `html` and return the children.
@@ -1641,7 +1323,7 @@ function parse(html) {
 
   // tag name
   var m = /<([\w:]+)/.exec(html);
-  if (!m) throw new Error('No elements were generated.');
+  if (!m) return document.createTextNode(html);
   var tag = m[1];
 
   // body support
@@ -1660,14 +1342,15 @@ function parse(html) {
   el.innerHTML = prefix + html + suffix;
   while (depth--) el = el.lastChild;
 
-  var els = el.children;
-  if (1 == els.length) {
-    return el.removeChild(els[0]);
+  // one element
+  if (el.firstChild == el.lastChild) {
+    return el.removeChild(el.firstChild);
   }
 
+  // several elements
   var fragment = document.createDocumentFragment();
-  while (els.length) {
-    fragment.appendChild(el.removeChild(els[0]));
+  while (el.firstChild) {
+    fragment.appendChild(el.removeChild(el.firstChild));
   }
 
   return fragment;
@@ -1776,12 +1459,530 @@ function aliasByDictionary (obj, aliases) {
  */
 
 function aliasByFunction (obj, convert) {
-  for (var key in obj) {
-    obj[convert(key)] = obj[key];
-    delete obj[key];
-  }
-  return obj;
+  // have to create another object so that ie8 won't infinite loop on keys
+  var output = {};
+  for (var key in obj) output[convert(key)] = obj[key];
+  return output;
 }
+});
+require.register("ianstormtaylor-to-no-case/index.js", function(exports, require, module){
+
+/**
+ * Expose `toNoCase`.
+ */
+
+module.exports = toNoCase;
+
+
+/**
+ * Test whether a string is camel-case.
+ */
+
+var hasSpace = /\s/;
+var hasSeparator = /[\W_]/;
+
+
+/**
+ * Remove any starting case from a `string`, like camel or snake, but keep
+ * spaces and punctuation that may be important otherwise.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+function toNoCase (string) {
+  if (hasSpace.test(string)) return string.toLowerCase();
+  if (hasSeparator.test(string)) return unseparate(string).toLowerCase();
+  return uncamelize(string).toLowerCase();
+}
+
+
+/**
+ * Separator splitter.
+ */
+
+var separatorSplitter = /[\W_]+(.|$)/g;
+
+
+/**
+ * Un-separate a `string`.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+function unseparate (string) {
+  return string.replace(separatorSplitter, function (m, next) {
+    return next ? ' ' + next : '';
+  });
+}
+
+
+/**
+ * Camelcase splitter.
+ */
+
+var camelSplitter = /(.)([A-Z]+)/g;
+
+
+/**
+ * Un-camelcase a `string`.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+function uncamelize (string) {
+  return string.replace(camelSplitter, function (m, previous, uppers) {
+    return previous + ' ' + uppers.toLowerCase().split('').join(' ');
+  });
+}
+});
+require.register("segmentio-analytics.js-integration/lib/index.js", function(exports, require, module){
+
+var bind = require('bind');
+var callback = require('callback');
+var clone = require('clone');
+var debug = require('debug');
+var defaults = require('defaults');
+var protos = require('./protos');
+var slug = require('slug');
+var statics = require('./statics');
+
+
+/**
+ * Expose `createIntegration`.
+ */
+
+module.exports = createIntegration;
+
+
+/**
+ * Create a new Integration constructor.
+ *
+ * @param {String} name
+ */
+
+function createIntegration (name) {
+
+  /**
+   * Initialize a new `Integration`.
+   *
+   * @param {Object} options
+   */
+
+  function Integration (options) {
+    this.debug = debug('analytics:integration:' + slug(name));
+    this.options = defaults(clone(options) || {}, this.defaults);
+    this._queue = [];
+    this.once('ready', bind(this, this.flush));
+
+    Integration.emit('construct', this);
+    this._wrapInitialize();
+    this._wrapLoad();
+    this._wrapPage();
+    this._wrapTrack();
+  }
+
+  Integration.prototype.defaults = {};
+  Integration.prototype.globals = [];
+  Integration.prototype.name = name;
+  for (var key in statics) Integration[key] = statics[key];
+  for (var key in protos) Integration.prototype[key] = protos[key];
+  return Integration;
+}
+
+});
+require.register("segmentio-analytics.js-integration/lib/protos.js", function(exports, require, module){
+
+/**
+ * Module dependencies.
+ */
+
+var normalize = require('to-no-case');
+var after = require('after');
+var callback = require('callback');
+var Emitter = require('emitter');
+var tick = require('next-tick');
+var events = require('./events');
+var type = require('type');
+
+
+/**
+ * Mixin emitter.
+ */
+
+Emitter(exports);
+
+/**
+ * Initialize.
+ */
+
+exports.initialize = function () {
+  this.load();
+};
+
+
+/**
+ * Loaded?
+ *
+ * @return {Boolean}
+ * @api private
+ */
+
+exports.loaded = function () {
+  return false;
+};
+
+
+/**
+ * Load.
+ *
+ * @param {Function} cb
+ */
+
+exports.load = function (cb) {
+  callback.async(cb);
+};
+
+
+/**
+ * Page.
+ *
+ * @param {Page} page
+ */
+
+exports.page = function(page){};
+
+/**
+ * Track.
+ *
+ * @param {Track} track
+ */
+
+exports.track = function(track){};
+
+/**
+ * Get events that match `str`.
+ * 
+ * Examples:
+ * 
+ *    { my_event: 'a4991b88' }
+ *    .track('My Event');
+ *    // => ["a4991b88"]
+ *    .track('whatever');
+ *    // => []
+ * 
+ *    [{ key: 'my event', value: '9b5eb1fa' }]
+ *    .track('my_event');
+ *    // => ["9b5eb1fa"]
+ *    .track('whatever');
+ *    // => []
+ * 
+ * @param {String} str
+ * @return {Array}
+ * @api public
+ */
+
+exports.events = function(str){
+  var events = this.options.events;
+  var a = normalize(str);
+  var ret = [];
+
+  // no events
+  if (!events) return ret;
+
+  // object
+  if ('object' == type(events)) {
+    for (var k in events) {
+      var item = events[k];
+      var b = normalize(k);
+      if (b == a) ret.push(item);
+    }
+  }
+
+  // array
+  if ('array' == type(events)) {
+    if (!events.length) return ret;
+    if (!events[0].key) return ret;
+
+    for (var i = 0; i < events.length; ++i) {
+      var item = events[i];
+      var b = normalize(item.key);
+      if (b == a) ret.push(item.value);
+    }
+  }
+
+  return ret;
+};
+
+/**
+ * Invoke a `method` that may or may not exist on the prototype with `args`,
+ * queueing or not depending on whether the integration is "ready". Don't
+ * trust the method call, since it contains integration party code.
+ *
+ * @param {String} method
+ * @param {Mixed} args...
+ * @api private
+ */
+
+exports.invoke = function (method) {
+  if (!this[method]) return;
+  var args = [].slice.call(arguments, 1);
+  if (!this._ready) return this.queue(method, args);
+  var ret;
+
+  try {
+    this.debug('%s with %o', method, args);
+    ret = this[method].apply(this, args);
+  } catch (e) {
+    this.debug('error %o calling %s with %o', e, method, args);
+  }
+
+  return ret;
+};
+
+
+/**
+ * Queue a `method` with `args`. If the integration assumes an initial
+ * pageview, then let the first call to `page` pass through.
+ *
+ * @param {String} method
+ * @param {Array} args
+ * @api private
+ */
+
+exports.queue = function (method, args) {
+  if ('page' == method && this._assumesPageview && !this._initialized) {
+    return this.page.apply(this, args);
+  }
+
+  this._queue.push({ method: method, args: args });
+};
+
+
+/**
+ * Flush the internal queue.
+ *
+ * @api private
+ */
+
+exports.flush = function () {
+  this._ready = true;
+  var call;
+  while (call = this._queue.shift()) this[call.method].apply(this, call.args);
+};
+
+
+/**
+ * Reset the integration, removing its global variables.
+ *
+ * @api private
+ */
+
+exports.reset = function () {
+  for (var i = 0, key; key = this.globals[i]; i++) window[key] = undefined;
+};
+
+
+/**
+ * Wrap the initialize method in an exists check, so we don't have to do it for
+ * every single integration.
+ *
+ * @api private
+ */
+
+exports._wrapInitialize = function () {
+  var initialize = this.initialize;
+  this.initialize = function () {
+    this.debug('initialize');
+    this._initialized = true;
+    var ret = initialize.apply(this, arguments);
+    this.emit('initialize');
+
+    var self = this;
+    if (this._readyOnInitialize) {
+      tick(function () {
+        self.emit('ready');
+      });
+    }
+    
+    return ret;
+  };
+
+  if (this._assumesPageview) this.initialize = after(2, this.initialize);
+};
+
+
+/**
+ * Wrap the load method in `debug` calls, so every integration gets them
+ * automatically.
+ *
+ * @api private
+ */
+
+exports._wrapLoad = function () {
+  var load = this.load;
+  this.load = function (callback) {
+    var self = this;
+    this.debug('loading');
+
+    if (this.loaded()) {
+      this.debug('already loaded');
+      tick(function () {
+        if (self._readyOnLoad) self.emit('ready');
+        callback && callback();
+      });
+      return;
+    }
+
+    return load.call(this, function (err, e) {
+      self.debug('loaded');
+      self.emit('load');
+      if (self._readyOnLoad) self.emit('ready');
+      callback && callback(err, e);
+    });
+  };
+};
+
+
+/**
+ * Wrap the page method to call `initialize` instead if the integration assumes
+ * a pageview.
+ *
+ * @api private
+ */
+
+exports._wrapPage = function () {
+  var page = this.page;
+  this.page = function () {
+    if (this._assumesPageview && !this._initialized) {
+      return this.initialize.apply(this, arguments);
+    }
+    
+    return page.apply(this, arguments);
+  };
+};
+
+/**
+ * Wrap the track method to call other ecommerce methods if
+ * available depending on the `track.event()`.
+ *
+ * @api private
+ */
+
+exports._wrapTrack = function(){
+  var t = this.track;
+  this.track = function(track){
+    var event = track.event();
+    var called;
+    var ret;
+
+    for (var method in events) {
+      var regexp = events[method];
+      if (!this[method]) continue;
+      if (!regexp.test(event)) continue;
+      ret = this[method].apply(this, arguments);
+      called = true;
+      break;
+    }
+
+    if (!called) ret = t.apply(this, arguments);
+    return ret;
+  };
+};
+
+});
+require.register("segmentio-analytics.js-integration/lib/events.js", function(exports, require, module){
+
+/**
+ * Expose `events`
+ */
+
+module.exports = {
+  removedProduct: /removed product/i,
+  viewedProduct: /viewed product/i,
+  addedProduct: /added product/i,
+  completedOrder: /completed order/i
+};
+
+});
+require.register("segmentio-analytics.js-integration/lib/statics.js", function(exports, require, module){
+
+var after = require('after');
+var Emitter = require('emitter');
+
+
+/**
+ * Mixin emitter.
+ */
+
+Emitter(exports);
+
+
+/**
+ * Add a new option to the integration by `key` with default `value`.
+ *
+ * @param {String} key
+ * @param {Mixed} value
+ * @return {Integration}
+ */
+
+exports.option = function (key, value) {
+  this.prototype.defaults[key] = value;
+  return this;
+};
+
+
+/**
+ * Register a new global variable `key` owned by the integration, which will be
+ * used to test whether the integration is already on the page.
+ *
+ * @param {String} global
+ * @return {Integration}
+ */
+
+exports.global = function (key) {
+  this.prototype.globals.push(key);
+  return this;
+};
+
+
+/**
+ * Mark the integration as assuming an initial pageview, so to defer loading
+ * the script until the first `page` call, noop the first `initialize`.
+ *
+ * @return {Integration}
+ */
+
+exports.assumesPageview = function () {
+  this.prototype._assumesPageview = true;
+  return this;
+};
+
+
+/**
+ * Mark the integration as being "ready" once `load` is called.
+ *
+ * @return {Integration}
+ */
+
+exports.readyOnLoad = function () {
+  this.prototype._readyOnLoad = true;
+  return this;
+};
+
+
+/**
+ * Mark the integration as being "ready" once `load` is called.
+ *
+ * @return {Integration}
+ */
+
+exports.readyOnInitialize = function () {
+  this.prototype._readyOnInitialize = true;
+  return this;
+};
 });
 require.register("segmentio-convert-dates/index.js", function(exports, require, module){
 
@@ -1926,6 +2127,57 @@ module.exports = function loadScript (options, callback) {
 };
 
 });
+require.register("segmentio-script-onload/index.js", function(exports, require, module){
+
+// https://github.com/thirdpartyjs/thirdpartyjs-code/blob/master/examples/templates/02/loading-files/index.html
+
+/**
+ * Invoke `fn(err)` when the given `el` script loads.
+ *
+ * @param {Element} el
+ * @param {Function} fn
+ * @api public
+ */
+
+module.exports = function(el, fn){
+  return el.addEventListener
+    ? add(el, fn)
+    : attach(el, fn);
+};
+
+/**
+ * Add event listener to `el`, `fn()`.
+ *
+ * @param {Element} el
+ * @param {Function} fn
+ * @api private
+ */
+
+function add(el, fn){
+  el.addEventListener('load', function(_, e){ fn(null, e); }, false);
+  el.addEventListener('error', function(e){
+    var err = new Error('failed to load the script "' + el.src + '"');
+    err.event = e;
+    fn(err);
+  }, false);
+}
+
+/**
+ * Attach evnet.
+ *
+ * @param {Element} el
+ * @param {Function} fn
+ * @api private
+ */
+
+function attach(el, fn){
+  el.attachEvent('onreadystatechange', function(e){
+    if (!/complete|loaded/.test(el.readyState)) return;
+    fn(null, e);
+  });
+}
+
+});
 require.register("segmentio-on-body/index.js", function(exports, require, module){
 var each = require('each');
 
@@ -2034,6 +2286,48 @@ function onError (fn) {
   }
 }
 });
+require.register("segmentio-to-iso-string/index.js", function(exports, require, module){
+
+/**
+ * Expose `toIsoString`.
+ */
+
+module.exports = toIsoString;
+
+
+/**
+ * Turn a `date` into an ISO string.
+ *
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toISOString
+ *
+ * @param {Date} date
+ * @return {String}
+ */
+
+function toIsoString (date) {
+  return date.getUTCFullYear()
+    + '-' + pad(date.getUTCMonth() + 1)
+    + '-' + pad(date.getUTCDate())
+    + 'T' + pad(date.getUTCHours())
+    + ':' + pad(date.getUTCMinutes())
+    + ':' + pad(date.getUTCSeconds())
+    + '.' + String((date.getUTCMilliseconds()/1000).toFixed(3)).slice(2, 5)
+    + 'Z';
+}
+
+
+/**
+ * Pad a `number` with a ten's place zero.
+ *
+ * @param {Number} number
+ * @return {String}
+ */
+
+function pad (number) {
+  var n = number.toString();
+  return n.length === 1 ? '0' + n : n;
+}
+});
 require.register("segmentio-to-unix-timestamp/index.js", function(exports, require, module){
 
 /**
@@ -2092,6 +2386,62 @@ function check () {
     location.protocol == 'chrome-extension:'
   );
 }
+});
+require.register("segmentio-when/index.js", function(exports, require, module){
+
+var callback = require('callback');
+
+
+/**
+ * Expose `when`.
+ */
+
+module.exports = when;
+
+
+/**
+ * Loop on a short interval until `condition()` is true, then call `fn`.
+ *
+ * @param {Function} condition
+ * @param {Function} fn
+ * @param {Number} interval (optional)
+ */
+
+function when (condition, fn, interval) {
+  if (condition()) return callback.async(fn);
+
+  var ref = setInterval(function () {
+    if (!condition()) return;
+    callback(fn);
+    clearInterval(ref);
+  }, interval || 10);
+}
+});
+require.register("yields-slug/index.js", function(exports, require, module){
+
+/**
+ * Generate a slug from the given `str`.
+ *
+ * example:
+ *
+ *        generate('foo bar');
+ *        // > foo-bar
+ *
+ * @param {String} str
+ * @param {Object} options
+ * @config {String|RegExp} [replace] characters to replace, defaulted to `/[^a-z0-9]/g`
+ * @config {String} [separator] separator to insert, defaulted to `-`
+ * @return {String}
+ */
+
+module.exports = function (str, options) {
+  options || (options = {});
+  return str.toLowerCase()
+    .replace(options.replace || /[^a-z0-9]/g, ' ')
+    .replace(/^ +| +$/g, '')
+    .replace(/ +/g, options.separator || '-')
+};
+
 });
 require.register("visionmedia-batch/index.js", function(exports, require, module){
 /**
@@ -2254,73 +2604,785 @@ Batch.prototype.end = function(cb){
 };
 
 });
-require.register("segmentio-analytics.js-integrations/index.js", function(exports, require, module){
+require.register("segmentio-substitute/index.js", function(exports, require, module){
+
+/**
+ * Expose `substitute`
+ */
+
+module.exports = substitute;
+
+/**
+ * Substitute `:prop` with the given `obj` in `str`
+ *
+ * @param {String} str
+ * @param {Object} obj
+ * @param {RegExp} expr
+ * @return {String}
+ * @api public
+ */
+
+function substitute(str, obj, expr){
+  if (!obj) throw new TypeError('expected an object');
+  expr = expr || /:(\w+)/g;
+  return str.replace(expr, function(_, prop){
+    return null != obj[prop]
+      ? obj[prop]
+      : _;
+  });
+}
+
+});
+require.register("segmentio-load-pixel/index.js", function(exports, require, module){
+
+/**
+ * Module dependencies.
+ */
+
+var stringify = require('querystring').stringify;
+var sub = require('substitute');
+
+/**
+ * Factory function to create a pixel loader.
+ *
+ * @param {String} path
+ * @return {Function}
+ * @api public
+ */
+
+module.exports = function(path){
+  return function(query, obj, fn){
+    if ('function' == typeof obj) fn = obj, obj = {};
+    obj = obj || {};
+    fn = fn || function(){};
+    var url = sub(path, obj);
+    var img = new Image;
+    img.onerror = error(fn, 'failed to load pixel', img);
+    img.onload = function(){ fn(); };
+    query = stringify(query);
+    if (query) query = '?' + query;
+    img.src = url + query;
+    img.width = 1;
+    img.height = 1;
+    return img;
+  };
+};
+
+/**
+ * Create an error handler.
+ *
+ * @param {Fucntion} fn
+ * @param {String} message
+ * @param {Image} img
+ * @return {Function}
+ * @api private
+ */
+
+function error(fn, message, img){
+  return function(e){
+    e = e || window.event;
+    var err = new Error(message);
+    err.event = e;
+    err.source = img;
+    fn(err);
+  };
+}
+
+});
+require.register("segmentio-replace-document-write/index.js", function(exports, require, module){
+var domify = require('domify');
+
+/**
+ * Replace document.write until a url is written matching the url fragment
+ *
+ * @param {String} match
+ * @param {Element} parent to appendChild onto
+ * @param {Function} fn optional callback function
+ */
+
+module.exports = function(match, parent, fn){
+  var write = document.write;
+  document.write = append;
+  if (typeof parent === 'function') fn = parent, parent = null;
+  if (!parent) parent = document.body;
+
+  function append(str){
+    var el = domify(str)
+    var src = el.src || '';
+    if (el.src.indexOf(match) === -1) return write(str);
+    if ('SCRIPT' == el.tagName) el = recreate(el);
+    parent.appendChild(el);
+    document.write = write;
+    fn && fn();
+  }
+};
+
+/**
+ * Re-create the given `script`.
+ *
+ * domify() actually adds the script to he dom
+ * and then immediately removes it so the script
+ * will never be loaded :/
+ *
+ * @param {Element} script
+ * @api public
+ */
+
+function recreate(script){
+  var ret = document.createElement('script');
+  ret.src = script.src;
+  ret.async = script.async;
+  ret.defer = script.defer;
+  return ret;
+}
+});
+require.register("ianstormtaylor-to-camel-case/index.js", function(exports, require, module){
+
+var toSpace = require('to-space-case');
+
+
+/**
+ * Expose `toCamelCase`.
+ */
+
+module.exports = toCamelCase;
+
+
+/**
+ * Convert a `string` to camel case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toCamelCase (string) {
+  return toSpace(string).replace(/\s(\w)/g, function (matches, letter) {
+    return letter.toUpperCase();
+  });
+}
+});
+require.register("ianstormtaylor-to-capital-case/index.js", function(exports, require, module){
+
+var clean = require('to-no-case');
+
+
+/**
+ * Expose `toCapitalCase`.
+ */
+
+module.exports = toCapitalCase;
+
+
+/**
+ * Convert a `string` to capital case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toCapitalCase (string) {
+  return clean(string).replace(/(^|\s)(\w)/g, function (matches, previous, letter) {
+    return previous + letter.toUpperCase();
+  });
+}
+});
+require.register("ianstormtaylor-to-constant-case/index.js", function(exports, require, module){
+
+var snake = require('to-snake-case');
+
+
+/**
+ * Expose `toConstantCase`.
+ */
+
+module.exports = toConstantCase;
+
+
+/**
+ * Convert a `string` to constant case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toConstantCase (string) {
+  return snake(string).toUpperCase();
+}
+});
+require.register("ianstormtaylor-to-dot-case/index.js", function(exports, require, module){
+
+var toSpace = require('to-space-case');
+
+
+/**
+ * Expose `toDotCase`.
+ */
+
+module.exports = toDotCase;
+
+
+/**
+ * Convert a `string` to slug case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toDotCase (string) {
+  return toSpace(string).replace(/\s/g, '.');
+}
+});
+require.register("ianstormtaylor-to-pascal-case/index.js", function(exports, require, module){
+
+var toSpace = require('to-space-case');
+
+
+/**
+ * Expose `toPascalCase`.
+ */
+
+module.exports = toPascalCase;
+
+
+/**
+ * Convert a `string` to pascal case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toPascalCase (string) {
+  return toSpace(string).replace(/(?:^|\s)(\w)/g, function (matches, letter) {
+    return letter.toUpperCase();
+  });
+}
+});
+require.register("ianstormtaylor-to-sentence-case/index.js", function(exports, require, module){
+
+var clean = require('to-no-case');
+
+
+/**
+ * Expose `toSentenceCase`.
+ */
+
+module.exports = toSentenceCase;
+
+
+/**
+ * Convert a `string` to camel case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toSentenceCase (string) {
+  return clean(string).replace(/[a-z]/i, function (letter) {
+    return letter.toUpperCase();
+  });
+}
+});
+require.register("ianstormtaylor-to-slug-case/index.js", function(exports, require, module){
+
+var toSpace = require('to-space-case');
+
+
+/**
+ * Expose `toSlugCase`.
+ */
+
+module.exports = toSlugCase;
+
+
+/**
+ * Convert a `string` to slug case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toSlugCase (string) {
+  return toSpace(string).replace(/\s/g, '-');
+}
+});
+require.register("ianstormtaylor-to-snake-case/index.js", function(exports, require, module){
+var toSpace = require('to-space-case');
+
+
+/**
+ * Expose `toSnakeCase`.
+ */
+
+module.exports = toSnakeCase;
+
+
+/**
+ * Convert a `string` to snake case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toSnakeCase (string) {
+  return toSpace(string).replace(/\s/g, '_');
+}
+
+});
+require.register("ianstormtaylor-to-space-case/index.js", function(exports, require, module){
+
+var clean = require('to-no-case');
+
+
+/**
+ * Expose `toSpaceCase`.
+ */
+
+module.exports = toSpaceCase;
+
+
+/**
+ * Convert a `string` to space case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toSpaceCase (string) {
+  return clean(string).replace(/[\W_]+(.|$)/g, function (matches, match) {
+    return match ? ' ' + match : '';
+  });
+}
+});
+require.register("component-escape-regexp/index.js", function(exports, require, module){
+
+/**
+ * Escape regexp special characters in `str`.
+ *
+ * @param {String} str
+ * @return {String}
+ * @api public
+ */
+
+module.exports = function(str){
+  return String(str).replace(/([.*+?=^!:${}()|[\]\/\\])/g, '\\$1');
+};
+});
+require.register("ianstormtaylor-map/index.js", function(exports, require, module){
 
 var each = require('each');
 
 
 /**
- * A list all of our integration slugs.
+ * Map an array or object.
+ *
+ * @param {Array|Object} obj
+ * @param {Function} iterator
+ * @return {Mixed}
  */
 
-var integrations = [
-  // 'adroll',
-  // 'amplitude',
-  // 'awesm',
-  // 'awesomatic',
-  // 'bugherd',
-  // 'bugsnag',
-  // 'chartbeat',
-  // 'clicktale',
-  // 'clicky',
-  // 'comscore',
-  // 'crazy-egg',
-  // 'customerio',
-  // 'drip',
-  // 'evergage',
-  // 'errorception',
-  // 'foxmetrics',
-  // 'gauges',
-  // 'get-satisfaction',
-  'google-analytics',
-  // 'gosquared',
-  // 'heap',
-  // 'hittail',
-  // 'hubspot',
-  // 'improvely',
-  // 'inspectlet',
-  'intercom',
-  'keen-io',
-  'kissmetrics',
-  // 'klaviyo',
-  // 'leadlander',
-  // 'livechat',
-  // 'lucky-orange',
-  // 'lytics',
-  'mixpanel'
-  // 'mousestats',
-  // 'olark',
-  // 'optimizely',
-  // 'perfect-audience',
-  // 'pingdom',
-  // 'preact',
-  // 'qualaroo',
-  // 'quantcast',
-  // 'rollbar',
-  // 'sentry',
-  // 'snapengage',
-  // 'spinnakr',
-  // 'tapstream',
-  // 'trakio',
-  // 'usercycle',
-  // 'userfox',
-  // 'uservoice',
-  // 'vero',
-  // 'visual-website-optimizer',
-  // 'woopra',
-  // 'yandex-metrica'
+module.exports = function map (obj, iterator) {
+  var arr = [];
+  each(obj, function (o) {
+    arr.push(iterator.apply(null, arguments));
+  });
+  return arr;
+};
+});
+require.register("ianstormtaylor-title-case-minors/index.js", function(exports, require, module){
+
+module.exports = [
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'but',
+  'by',
+  'en',
+  'for',
+  'from',
+  'how',
+  'if',
+  'in',
+  'neither',
+  'nor',
+  'of',
+  'on',
+  'only',
+  'onto',
+  'out',
+  'or',
+  'per',
+  'so',
+  'than',
+  'that',
+  'the',
+  'to',
+  'until',
+  'up',
+  'upon',
+  'v',
+  'v.',
+  'versus',
+  'vs',
+  'vs.',
+  'via',
+  'when',
+  'with',
+  'without',
+  'yet'
+];
+});
+require.register("ianstormtaylor-to-title-case/index.js", function(exports, require, module){
+
+var capital = require('to-capital-case')
+  , escape = require('escape-regexp')
+  , map = require('map')
+  , minors = require('title-case-minors');
+
+
+/**
+ * Expose `toTitleCase`.
+ */
+
+module.exports = toTitleCase;
+
+
+/**
+ * Minors.
+ */
+
+var escaped = map(minors, escape);
+var minorMatcher = new RegExp('[^^]\\b(' + escaped.join('|') + ')\\b', 'ig');
+var colonMatcher = /:\s*(\w)/g;
+
+
+/**
+ * Convert a `string` to camel case.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+
+function toTitleCase (string) {
+  return capital(string)
+    .replace(minorMatcher, function (minor) {
+      return minor.toLowerCase();
+    })
+    .replace(colonMatcher, function (letter) {
+      return letter.toUpperCase();
+    });
+}
+});
+require.register("ianstormtaylor-case/lib/index.js", function(exports, require, module){
+
+var cases = require('./cases');
+
+
+/**
+ * Expose `determineCase`.
+ */
+
+module.exports = exports = determineCase;
+
+
+/**
+ * Determine the case of a `string`.
+ *
+ * @param {String} string
+ * @return {String|Null}
+ */
+
+function determineCase (string) {
+  for (var key in cases) {
+    if (key == 'none') continue;
+    var convert = cases[key];
+    if (convert(string) == string) return key;
+  }
+  return null;
+}
+
+
+/**
+ * Define a case by `name` with a `convert` function.
+ *
+ * @param {String} name
+ * @param {Object} convert
+ */
+
+exports.add = function (name, convert) {
+  exports[name] = cases[name] = convert;
+};
+
+
+/**
+ * Add all the `cases`.
+ */
+
+for (var key in cases) {
+  exports.add(key, cases[key]);
+}
+});
+require.register("ianstormtaylor-case/lib/cases.js", function(exports, require, module){
+
+var camel = require('to-camel-case')
+  , capital = require('to-capital-case')
+  , constant = require('to-constant-case')
+  , dot = require('to-dot-case')
+  , none = require('to-no-case')
+  , pascal = require('to-pascal-case')
+  , sentence = require('to-sentence-case')
+  , slug = require('to-slug-case')
+  , snake = require('to-snake-case')
+  , space = require('to-space-case')
+  , title = require('to-title-case');
+
+
+/**
+ * Camel.
+ */
+
+exports.camel = camel;
+
+
+/**
+ * Pascal.
+ */
+
+exports.pascal = pascal;
+
+
+/**
+ * Dot. Should precede lowercase.
+ */
+
+exports.dot = dot;
+
+
+/**
+ * Slug. Should precede lowercase.
+ */
+
+exports.slug = slug;
+
+
+/**
+ * Snake. Should precede lowercase.
+ */
+
+exports.snake = snake;
+
+
+/**
+ * Space. Should precede lowercase.
+ */
+
+exports.space = space;
+
+
+/**
+ * Constant. Should precede uppercase.
+ */
+
+exports.constant = constant;
+
+
+/**
+ * Capital. Should precede sentence and title.
+ */
+
+exports.capital = capital;
+
+
+/**
+ * Title.
+ */
+
+exports.title = title;
+
+
+/**
+ * Sentence.
+ */
+
+exports.sentence = sentence;
+
+
+/**
+ * Convert a `string` to lower case from camel, slug, etc. Different that the
+ * usual `toLowerCase` in that it will try to break apart the input first.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+exports.lower = function (string) {
+  return none(string).toLowerCase();
+};
+
+
+/**
+ * Convert a `string` to upper case from camel, slug, etc. Different that the
+ * usual `toUpperCase` in that it will try to break apart the input first.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+exports.upper = function (string) {
+  return none(string).toUpperCase();
+};
+
+
+/**
+ * Invert each character in a `string` from upper to lower and vice versa.
+ *
+ * @param {String} string
+ * @return {String}
+ */
+
+exports.inverse = function (string) {
+  for (var i = 0, char; char = string[i]; i++) {
+    if (!/[a-z]/i.test(char)) continue;
+    var upper = char.toUpperCase();
+    var lower = char.toLowerCase();
+    string[i] = char == upper ? lower : upper;
+  }
+  return string;
+};
+
+
+/**
+ * None.
+ */
+
+exports.none = none;
+});
+require.register("segmentio-obj-case/index.js", function(exports, require, module){
+
+var Case = require('case');
+
+
+var cases = [
+  Case.upper,
+  Case.lower,
+  Case.snake,
+  Case.pascal,
+  Case.camel,
+  Case.constant,
+  Case.title,
+  Case.capital,
+  Case.sentence
 ];
 
+
+/**
+ * Module exports, export
+ */
+
+module.exports = module.exports.find = multiple(find);
+
+
+/**
+ * Export the replacement function, return the modified object
+ */
+
+module.exports.replace = function (obj, key, val) {
+  multiple(replace).apply(this, arguments);
+  return obj;
+};
+
+
+/**
+ * Export the delete function, return the modified object
+ */
+
+module.exports.del = function (obj, key) {
+  multiple(del).apply(this, arguments);
+  return obj;
+};
+
+
+/**
+ * Compose applying the function to a nested key
+ */
+
+function multiple (fn) {
+  return function (obj, key, val) {
+    var keys = key.split('.');
+    if (keys.length === 0) return;
+
+    while (keys.length > 1) {
+      key = keys.shift();
+      obj = find(obj, key);
+
+      if (obj === null || obj === undefined) return;
+    }
+
+    key = keys.shift();
+    return fn(obj, key, val);
+  };
+}
+
+
+/**
+ * Find an object by its key
+ *
+ * find({ first_name : 'Calvin' }, 'firstName')
+ */
+
+function find (obj, key) {
+  for (var i = 0; i < cases.length; i++) {
+    var cased = cases[i](key);
+    if (obj.hasOwnProperty(cased)) return obj[cased];
+  }
+}
+
+
+/**
+ * Delete a value for a given key
+ *
+ * del({ a : 'b', x : 'y' }, 'X' }) -> { a : 'b' }
+ */
+
+function del (obj, key) {
+  for (var i = 0; i < cases.length; i++) {
+    var cased = cases[i](key);
+    if (obj.hasOwnProperty(cased)) delete obj[cased];
+  }
+  return obj;
+}
+
+
+/**
+ * Replace an objects existing value with a new one
+ *
+ * replace({ a : 'b' }, 'a', 'c') -> { a : 'c' }
+ */
+
+function replace (obj, key, val) {
+  for (var i = 0; i < cases.length; i++) {
+    var cased = cases[i](key);
+    if (obj.hasOwnProperty(cased)) obj[cased] = val;
+  }
+  return obj;
+}
+
+});
+require.register("segmentio-analytics.js-integrations/index.js", function(exports, require, module){
+
+var integrations = require('./lib/slugs');
+var each = require('each');
 
 /**
  * Expose the integrations, using their own `name` from their `prototype`.
@@ -2342,8 +3404,14 @@ var integration = require('integration');
 var is = require('is');
 var load = require('load-script');
 var push = require('global-queue')('_gaq');
+var Track = require('facade').Track;
+var length = require('object').length;
+var keys = require('object').keys;
+var dot = require('obj-case');
 var type = require('type');
 var url = require('url');
+var group;
+var user;
 
 
 /**
@@ -2352,6 +3420,8 @@ var url = require('url');
 
 module.exports = exports = function (analytics) {
   analytics.addIntegration(GA);
+  group = analytics.group();
+  user = analytics.user();
 };
 
 
@@ -2374,10 +3444,14 @@ var GA = exports.Integration = integration('Google Analytics')
   .option('doubleClick', false)
   .option('enhancedLinkAttribution', false)
   .option('ignoreReferrer', null)
+  .option('includeSearch', false)
   .option('siteSpeedSampleRate', null)
   .option('trackingId', '')
   .option('trackNamedPages', true)
-  .option('trackCategorizedPages', true);
+  .option('trackCategorizedPages', true)
+  .option('sendUserId', false)
+  .option('metrics', {})
+  .option('dimensions', {});
 
 
 /**
@@ -2392,6 +3466,7 @@ GA.on('construct', function (integration) {
   integration.loaded = integration.loadedClassic;
   integration.page = integration.pageClassic;
   integration.track = integration.trackClassic;
+  integration.completedOrder = integration.completedOrderClassic;
 });
 
 
@@ -2403,6 +3478,9 @@ GA.on('construct', function (integration) {
 
 GA.prototype.initialize = function () {
   var opts = this.options;
+  var gMetrics = metrics(group.traits(), opts);
+  var uMetrics = metrics(user.traits(), opts);
+  var custom;
 
   // setup the tracker globals
   window.GoogleAnalyticsObject = 'ga';
@@ -2418,9 +3496,23 @@ GA.prototype.initialize = function () {
     allowLinker: true
   });
 
+  // display advertising
+  if (opts.doubleClick) {
+    window.ga('require', 'displayfeatures');
+  }
+
+  // send global id
+  if (opts.sendUserId && user.id()) {
+    window.ga('set', '&uid', user.id());
+  }  
+
   // anonymize after initializing, otherwise a warning is shown
   // in google analytics debugger
   if (opts.anonymizeIp) window.ga('set', 'anonymizeIp', true);
+
+  // custom dimensions & metrics
+  if (length(gMetrics)) window.ga('set', gMetrics);
+  if (length(uMetrics)) window.ga('set', uMetrics);
 
   this.load();
 };
@@ -2453,31 +3545,37 @@ GA.prototype.load = function (callback) {
  *
  * https://developers.google.com/analytics/devguides/collection/analyticsjs/pages
  *
- * @param {String} category (optional)
- * @param {String} name (optional)
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Page} page
  */
 
-GA.prototype.page = function (category, name, properties, options) {
-  properties = properties || {};
-  this._category = category; // store for later
-  if (name && category) name = category + ' ' + name;
+GA.prototype.page = function (page) {
+  var category = page.category();
+  var props = page.properties();
+  var name = page.fullName();
+  var pageview = {};
+  var track;
 
-  window.ga('send', 'pageview', {
-    page: properties.path,
-    title: name || properties.title,
-    url: properties.url
-  });
+  this._category = category; // store for later
+
+  // add metrics and dimensions
+  var hit = metrics(page.properties(), this.options);
+  hit.page = path(props, this.options);
+  hit.title = name || props.title;
+  hit.location = props.url;
+
+  // send
+  window.ga('send', 'pageview', hit);
 
   // categorized pages
   if (category && this.options.trackCategorizedPages) {
-    this.track('Viewed ' + category + ' Page', properties, { noninteraction: true });
+    track = page.track(category);
+    this.track(track, { noninteraction: true });
   }
 
   // named pages
   if (name && this.options.trackNamedPages) {
-    this.track('Viewed ' + name + ' Page', properties, { noninteraction: true });
+    track = page.track(name);
+    this.track(track, { noninteraction: true });
   }
 };
 
@@ -2488,24 +3586,75 @@ GA.prototype.page = function (category, name, properties, options) {
  * https://developers.google.com/analytics/devguides/collection/analyticsjs/events
  * https://developers.google.com/analytics/devguides/collection/analyticsjs/field-reference
  *
- * @param {String} event
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Track} event
  */
 
-GA.prototype.track = function (event, properties, options) {
-  properties = properties || {};
-  options = options || {};
+GA.prototype.track = function (track, options) {
+  var opts = options || track.options(this.name);
+  var props = track.properties();
 
-  window.ga('send', 'event', {
-    eventAction: event,
-    eventCategory: this._category || properties.category || 'All',
-    eventLabel: properties.label,
-    eventValue: formatValue(properties.value || properties.revenue),
-    nonInteraction: properties.noninteraction || options.noninteraction
-  });
+  // metrics & dimensions
+  var event = metrics(props, this.options);
+
+  // event
+  event.eventAction = track.event();
+  event.eventCategory = this._category || props.category || 'All';
+  event.eventLabel = props.label;
+  event.eventValue = formatValue(props.value || track.revenue());
+  event.nonInteraction = props.noninteraction || opts.noninteraction;
+
+  // send
+  window.ga('send', 'event', event);
 };
 
+/**
+ * Completed order.
+ *
+ * https://developers.google.com/analytics/devguides/collection/analyticsjs/ecommerce
+ *
+ * @param {Track} track
+ * @api private
+ */
+
+GA.prototype.completedOrder = function(track){
+  var orderId = track.orderId();
+  var products = track.products();
+  var props = track.properties();
+
+  // orderId is required.
+  if (!orderId) return;
+
+  // require ecommerce
+  if (!this.ecommerce) {
+    window.ga('require', 'ecommerce', 'ecommerce.js');
+    this.ecommerce = true;
+  }
+
+  // add transaction
+  window.ga('ecommerce:addTransaction', {
+    affiliation: props.affiliation,
+    shipping: track.shipping(),
+    revenue: track.total(),
+    tax: track.tax(),
+    id: orderId
+  });
+
+  // add products
+  each(products, function(product){
+    var track = new Track({ properties: product });
+    window.ga('ecommerce:addItem', {
+      category: track.category(),
+      quantity: track.quantity(),
+      price: track.price(),
+      name: track.name(),
+      sku: track.sku(),
+      id: orderId
+    });
+  });
+
+  // send
+  window.ga('ecommerce:send');
+};
 
 /**
  * Initialize (classic).
@@ -2581,28 +3730,28 @@ GA.prototype.loadClassic = function (callback) {
  *
  * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiBasicConfiguration
  *
- * @param {String} category (optional)
- * @param {String} name (optional)
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Page} page
  */
 
-GA.prototype.pageClassic = function (category, name, properties, options) {
-  properties = properties || {};
-  options = options || {};
-  this._category = category; // store for later
+GA.prototype.pageClassic = function (page) {
+  var opts = page.options(this.name);
+  var category = page.category();
+  var props = page.properties();
+  var name = page.fullName();
+  var track;
 
-  push('_trackPageview', properties.path);
+  push('_trackPageview', path(props, this.options));
 
   // categorized pages
   if (category && this.options.trackCategorizedPages) {
-    this.track('Viewed ' + category + ' Page', properties, { noninteraction: true });
+    track = page.track(category);
+    this.track(track, { noninteraction: true });
   }
 
   // named pages
   if (name && this.options.trackNamedPages) {
-    if (name && category) name = category + ' ' + name;
-    this.track('Viewed ' + name + ' Page', properties, { noninteraction: true });
+    track = page.track(name);
+    this.track(track, { noninteraction: true });
   }
 };
 
@@ -2612,22 +3761,78 @@ GA.prototype.pageClassic = function (category, name, properties, options) {
  *
  * https://developers.google.com/analytics/devguides/collection/gajs/methods/gaJSApiEventTracking
  *
- * @param {String} event
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Track} track
  */
 
-GA.prototype.trackClassic = function (event, properties, options) {
-  properties = properties || {};
-  options = options || {};
-
-  var category = this._category || properties.category || 'All';
-  var label = properties.label;
-  var value = formatValue(properties.revenue || properties.value);
-  var noninteraction = properties.noninteraction || options.noninteraction;
-
+GA.prototype.trackClassic = function (track, options) {
+  var opts = options || track.options(this.name);
+  var props = track.properties();
+  var revenue = track.revenue();
+  var event = track.event();
+  var category = this._category || props.category || 'All';
+  var label = props.label;
+  var value = formatValue(revenue || props.value);
+  var noninteraction = props.noninteraction || opts.noninteraction;
   push('_trackEvent', category, event, label, value, noninteraction);
 };
+
+/**
+ * Completed order.
+ *
+ * https://developers.google.com/analytics/devguides/collection/gajs/gaTrackingEcommerce
+ *
+ * @param {Track} track
+ * @api private
+ */
+
+GA.prototype.completedOrderClassic = function(track){
+  var orderId = track.orderId();
+  var products = track.products() || [];
+  var props = track.properties();
+
+  // required
+  if (!orderId) return;
+
+  // add transaction
+  push('_addTrans'
+    , orderId
+    , props.affiliation
+    , track.total()
+    , track.tax()
+    , track.shipping()
+    , track.city()
+    , track.state()
+    , track.country());
+
+  // add items
+  each(products, function(product){
+    var track = new Track({ properties: product });
+    push('_addItem'
+      , orderId
+      , track.sku()
+      , track.name()
+      , track.category()
+      , track.price()
+      , track.quantity());
+  })
+
+  // send
+  push('_trackTrans');
+};
+
+/**
+ * Return the path based on `properties` and `options`.
+ *
+ * @param {Object} properties
+ * @param {Object} options
+ */
+
+function path (properties, options) {
+  if (!properties) return;
+  var str = properties.path;
+  if (options.includeSearch && properties.search) str += properties.search;
+  return str;
+}
 
 
 /**
@@ -2641,6 +3846,40 @@ function formatValue (value) {
   if (!value || value < 0) return 0;
   return Math.round(value);
 }
+
+/**
+ * Map google's custom dimensions & metrics with `obj`.
+ * 
+ * Example:
+ * 
+ *      metrics({ revenue: 1.9 }, { { metrics : { metric8: 'revenue' } });
+ *      // => { metric8: 1.9 }
+ * 
+ *      metrics({ revenue: 1.9 }, {});
+ *      // => {}
+ * 
+ * @param {Object} obj
+ * @param {Object} data
+ * @return {Object|null}
+ * @api private
+ */
+
+function metrics(obj, data){
+  var dimensions = data.dimensions;
+  var metrics = data.metrics;
+  var names = keys(metrics).concat(keys(dimensions));
+  var ret = {};
+
+  for (var i = 0; i < names.length; ++i) {
+    var name = metrics[names[i]] || dimensions[names[i]];
+    var value = dot(obj, name);
+    if (null == value) continue;
+    ret[names[i]] = value;
+  }
+
+  return ret;
+}
+
 });
 require.register("segmentio-analytics.js-integrations/lib/intercom.js", function(exports, require, module){
 
@@ -2651,6 +3890,12 @@ var each = require('each');
 var is = require('is');
 var isEmail = require('is-email');
 var load = require('load-script');
+var defaults = require('defaults');
+var empty = require('is-empty');
+
+
+/* Group reference. */
+var group;
 
 
 /**
@@ -2659,6 +3904,7 @@ var load = require('load-script');
 
 module.exports = exports = function (analytics) {
   analytics.addIntegration(Intercom);
+  group = analytics.group();
 };
 
 
@@ -2672,7 +3918,6 @@ var Intercom = exports.Integration = integration('Intercom')
   .global('Intercom')
   .option('activator', '#IntercomDefaultWidget')
   .option('appId', '')
-  .option('counter', true)
   .option('inbox', false);
 
 
@@ -2711,43 +3956,72 @@ Intercom.prototype.load = function (callback) {
   load('https://static.intercomcdn.com/intercom.v1.js', callback);
 };
 
+/**
+ * Page.
+ *
+ * @param {Page} page
+ */
+
+Intercom.prototype.page = function(page){
+  window.Intercom('update');
+};
+
 
 /**
  * Identify.
  *
  * http://docs.intercom.io/#IntercomJS
  *
- * @param {String} id (optional)
- * @param {Object} traits (optional)
- * @param {Object} options (optional)
+ * @param {Identify} identify
  */
 
-Intercom.prototype.identify = function (id, traits, options) {
-  traits = traits || {};
-  options = options || {};
+Intercom.prototype.identify = function (identify) {
+  var traits = identify.traits({ userId: 'user_id' });
+  var activator = this.options.activator;
+  var opts = identify.options(this.name);
+  var companyCreated = identify.companyCreated();
+  var created = identify.created();
+  var email = identify.email();
+  var name = identify.name();
+  var id = identify.userId();
 
   if (!id && !traits.email) return; // one is required
 
   traits.app_id = this.options.appId;
-  if (id) traits.user_id = id;
+
+  // Make sure company traits are carried over (fixes #120).
+  if (!empty(group.traits())) {
+    traits.company = traits.company || {};
+    defaults(traits.company, group.traits());
+  }
+
+  // name
+  if (name) traits.name = name;
 
   // handle dates
+  if (companyCreated) traits.company.created = companyCreated;
+  if (created) traits.created = created;
+
+  // convert dates
   traits = convertDates(traits, formatDate);
   traits = alias(traits, { created: 'created_at'});
+
+  // company
   if (traits.company) {
     traits.company = alias(traits.company, { created: 'created_at' });
   }
 
   // handle options
-  var Intercom = options.Intercom || options.intercom || {};
-  if (Intercom.increments) traits.increments = Intercom.increments;
-  if (Intercom.userHash) traits.user_hash = Intercom.userHash;
-  if (Intercom.user_hash) traits.user_hash = Intercom.user_hash;
-  if (this.options.inbox) {
-    traits.widget = {
-      activator: this.options.activator,
-      use_counter: this.options.counter
-    };
+  if (opts.increments) traits.increments = opts.increments;
+  if (opts.userHash) traits.user_hash = opts.userHash;
+  if (opts.user_hash) traits.user_hash = opts.user_hash;
+
+  // Intercom, will force the widget to appear
+  // if the selector is #IntercomDefaultWidget
+  // so no need to check inbox, just need to check
+  // that the selector isn't #IntercomDefaultWidget.
+  if ('#IntercomDefaultWidget' != activator) {
+    traits.widget = { activator: activator };
   }
 
   var method = this._id !== id ? 'boot': 'update';
@@ -2760,17 +4034,25 @@ Intercom.prototype.identify = function (id, traits, options) {
 /**
  * Group.
  *
- * @param {String} id (optional)
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Group} group
  */
 
-Intercom.prototype.group = function (id, properties, options) {
-  properties = properties || {};
-  if (id) properties.id = id;
-  window.Intercom('update', { company: properties });
+Intercom.prototype.group = function (group) {
+  var props = group.properties();
+  var id = group.groupId();
+  if (id) props.id = id;
+  window.Intercom('update', { company: props });
 };
 
+/**
+ * Track.
+ *
+ * @param {Track} track
+ */
+
+Intercom.prototype.track = function(track){
+  window.Intercom('trackEvent', track.event(), track.properties());
+};
 
 /**
  * Format a date to Intercom's liking.
@@ -2782,6 +4064,7 @@ Intercom.prototype.group = function (id, properties, options) {
 function formatDate (date) {
   return Math.floor(date / 1000);
 }
+
 });
 require.register("segmentio-analytics.js-integrations/lib/keen-io.js", function(exports, require, module){
 
@@ -2857,29 +4140,28 @@ Keen.prototype.load = function (callback) {
 /**
  * Page.
  *
- * @param {String} category (optional)
- * @param {String} name (optional)
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Page} page
  */
 
-Keen.prototype.page = function (category, name, properties, options) {
+Keen.prototype.page = function (page) {
+  var category = page.category();
+  var props = page.properties();
+  var name = page.fullName();
   var opts = this.options;
 
   // all pages
   if (opts.trackAllPages) {
-    this.track('Loaded a Page', properties);
+    this.track(page.track());
   }
 
   // named pages
   if (name && opts.trackNamedPages) {
-    if (name && category) name = category + ' ' + name;
-    this.track('Viewed ' + name + ' Page', properties);
+    this.track(page.track(name));
   }
 
   // categorized pages
   if (category && opts.trackCategorizedPages) {
-    this.track('Viewed ' + category + ' Page', properties);
+    this.track(page.track(category));
   }
 };
 
@@ -2889,13 +4171,12 @@ Keen.prototype.page = function (category, name, properties, options) {
  *
  * TODO: migrate from old `userId` to simpler `id`
  *
- * @param {String} id (optional)
- * @param {Object} traits (optional)
- * @param {Object} options (optional)
+ * @param {Identify} identify
  */
 
-Keen.prototype.identify = function (id, traits, options) {
-  traits = traits || {};
+Keen.prototype.identify = function (identify) {
+  var traits = identify.traits();
+  var id = identify.userId();
   var user = {};
   if (id) user.userId = id;
   if (traits) user.traits = traits;
@@ -2908,14 +4189,13 @@ Keen.prototype.identify = function (id, traits, options) {
 /**
  * Track.
  *
- * @param {String} event
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Track} track
  */
 
-Keen.prototype.track = function (event, properties, options) {
-  window.Keen.addEvent(event, properties);
+Keen.prototype.track = function (track) {
+  window.Keen.addEvent(track.event(), track.properties());
 };
+
 });
 require.register("segmentio-analytics.js-integrations/lib/kissmetrics.js", function(exports, require, module){
 
@@ -2926,7 +4206,8 @@ var integration = require('integration');
 var is = require('is');
 var load = require('load-script');
 var push = require('global-queue')('_kmq');
-
+var Track = require('facade').Track;
+var each = require('each');
 
 /**
  * Expose plugin.
@@ -3004,19 +4285,19 @@ KISSmetrics.prototype.load = function (callback) {
  * @param {Object} options (optional)
  */
 
-KISSmetrics.prototype.page = function (category, name, properties, options) {
-  properties = properties || {};
+KISSmetrics.prototype.page = function (page) {
+  var category = page.category();
+  var name = page.fullName();
   var opts = this.options;
 
   // named pages
   if (name && opts.trackNamedPages) {
-    if (name && category) name = category + ' ' + name;
-    this.track('Viewed ' + name + ' Page', properties);
+    this.track(page.track(name));
   }
 
   // categorized pages
   if (category && opts.trackCategorizedPages) {
-    this.track('Viewed ' + category + ' Page', properties);
+    this.track(page.track(category));
   }
 };
 
@@ -3024,13 +4305,12 @@ KISSmetrics.prototype.page = function (category, name, properties, options) {
 /**
  * Identify.
  *
- * @param {String} id (optional)
- * @param {Object} traits (optional)
- * @param {Object} options (optional)
+ * @param {Identify} identify
  */
 
-KISSmetrics.prototype.identify = function (id, traits, options) {
-  traits = traits || {};
+KISSmetrics.prototype.identify = function (identify) {
+  var traits = identify.traits();
+  var id = identify.userId();
   if (id) push('identify', id);
   if (traits) push('set', traits);
 };
@@ -3039,36 +4319,106 @@ KISSmetrics.prototype.identify = function (id, traits, options) {
 /**
  * Track.
  *
- * @param {String} event
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Track} track
  */
 
-KISSmetrics.prototype.track = function (event, properties, options) {
-  properties = properties || {};
-  properties = alias(properties, { revenue: 'Billing Amount' });
-  push('record', event, properties);
+KISSmetrics.prototype.track = function (track) {
+  var props = track.properties({ revenue: 'Billing Amount' });
+  push('record', track.event(), props);
 };
 
 
 /**
  * Alias.
  *
- * @param {String} to
- * @param {String} from (optional)
+ * @param {Alias} to
  */
 
-KISSmetrics.prototype.alias = function (to, from) {
-  push('alias', to, from);
+KISSmetrics.prototype.alias = function (alias) {
+  push('alias', alias.to(), alias.from());
 };
+
+/**
+ * Viewed product.
+ *
+ * @param {Track} track
+ * @api private
+ */
+
+KISSmetrics.prototype.viewedProduct = function(track){
+  push('record', 'Product Viewed', toProduct(track));
+};
+
+/**
+ * Product added.
+ *
+ * @param {Track} track
+ * @api private
+ */
+
+KISSmetrics.prototype.addedProduct = function(track){
+  push('record', 'Product Added', toProduct(track));
+};
+
+/**
+ * Completed order.
+ *
+ * @param {Track} track
+ * @api private
+ */
+
+KISSmetrics.prototype.completedOrder = function(track){
+  var orderId = track.orderId();
+  var products = track.products();
+
+  // transaction
+  push('record', 'Purchased', {
+    'Order ID': track.orderId(),
+    'Order Total': track.total()
+  });
+
+  // items
+  window._kmq.push(function(){
+    var km = window.KM;
+    each(products, function(product, i){
+      var track = new Track({ properties: product });
+      var item = toProduct(track);
+      item['Order ID'] = orderId;
+      item._t = km.ts() + i;
+      item._d = 1;
+      km.set(item);
+    });
+  });
+};
+
+/**
+ * Get a product from the given `track`.
+ *
+ * @param {Track} track
+ * @return {Object}
+ * @api private
+ */
+
+function toProduct(track){
+  return {
+    Quantity: track.quantity(),
+    Price: track.price(),
+    Name: track.name(),
+    SKU: track.sku()
+  };
+}
+
 });
 require.register("segmentio-analytics.js-integrations/lib/mixpanel.js", function(exports, require, module){
 
 var alias = require('alias');
 var clone = require('clone');
+var dates = require('convert-dates');
 var integration = require('integration');
+var iso = require('to-iso-string');
 var load = require('load-script');
-
+var indexof = require('indexof');
+var del = require('obj-case').del;
 
 /**
  * Expose plugin.
@@ -3086,6 +4436,7 @@ module.exports = exports = function (analytics) {
 var Mixpanel = exports.Integration = integration('Mixpanel')
   .readyOnLoad()
   .global('mixpanel')
+  .option('increments', [])
   .option('cookieName', '')
   .option('nameTag', true)
   .option('pageview', false)
@@ -3114,6 +4465,7 @@ var optionsAliases = {
 
 Mixpanel.prototype.initialize = function () {
   (function (c, a) {window.mixpanel = a; var b, d, h, e; a._i = []; a.init = function (b, c, f) {function d(a, b) {var c = b.split('.'); 2 == c.length && (a = a[c[0]], b = c[1]); a[b] = function () {a.push([b].concat(Array.prototype.slice.call(arguments, 0))); }; } var g = a; 'undefined' !== typeof f ? g = a[f] = [] : f = 'mixpanel'; g.people = g.people || []; h = ['disable', 'track', 'track_pageview', 'track_links', 'track_forms', 'register', 'register_once', 'unregister', 'identify', 'alias', 'name_tag', 'set_config', 'people.set', 'people.increment', 'people.track_charge', 'people.append']; for (e = 0; e < h.length; e++) d(g, h[e]); a._i.push([b, c, f]); }; a.__SV = 1.2; })(document, window.mixpanel || []);
+  this.options.increments = lowercase(this.options.increments);
   var options = alias(this.options, optionsAliases);
   window.mixpanel.init(options.token, options);
   this.load();
@@ -3153,23 +4505,24 @@ Mixpanel.prototype.load = function (callback) {
  * @param {Object} options (optional)
  */
 
-Mixpanel.prototype.page = function (category, name, properties, options) {
+Mixpanel.prototype.page = function (page) {
+  var category = page.category();
+  var name = page.fullName();
   var opts = this.options;
 
   // all pages
   if (opts.trackAllPages) {
-    this.track('Loaded a Page', properties);
+    this.track(page.track());
   }
 
   // categorized pages
   if (category && opts.trackCategorizedPages) {
-    this.track('Viewed ' + category + ' Page', properties);
+    this.track(page.track(category));
   }
 
   // named pages
   if (name && opts.trackNamedPages) {
-    if (name && category) name = category + ' ' + name;
-    this.track('Viewed ' + name + ' Page', properties);
+    this.track(page.track(name));
   }
 };
 
@@ -3197,23 +4550,24 @@ var traitAliases = {
  * https://mixpanel.com/help/reference/javascript#user-identity
  * https://mixpanel.com/help/reference/javascript#storing-user-profiles
  *
- * @param {String} id (optional)
- * @param {Object} traits (optional)
- * @param {Object} options (optional)
+ * @param {Identify} identify
  */
 
-Mixpanel.prototype.identify = function (id, traits, options) {
-  traits = traits || {};
+Mixpanel.prototype.identify = function (identify) {
+  var username = identify.username();
+  var email = identify.email();
+  var id = identify.userId();
 
   // id
   if (id) window.mixpanel.identify(id);
 
   // name tag
-  var nametag = traits.email || traits.username || id;
+  var nametag = email || username || id;
   if (nametag) window.mixpanel.name_tag(nametag);
 
   // traits
-  traits = alias(traits, traitAliases);
+  var traits = identify.traits(traitAliases);
+  if (traits.$created) del(traits, 'createdAt');
   window.mixpanel.register(traits);
   if (this.options.people) window.mixpanel.people.set(traits);
 };
@@ -3225,16 +4579,26 @@ Mixpanel.prototype.identify = function (id, traits, options) {
  * https://mixpanel.com/help/reference/javascript#sending-events
  * https://mixpanel.com/help/reference/javascript#tracking-revenue
  *
- * @param {String} event
- * @param {Object} properties (optional)
- * @param {Object} options (optional)
+ * @param {Track} track
  */
 
-Mixpanel.prototype.track = function (event, properties, options) {
-  properties = properties || {};
-  window.mixpanel.track(event, properties);
-  if (properties.revenue && this.options.people) {
-    window.mixpanel.people.track_charge(properties.revenue);
+Mixpanel.prototype.track = function (track) {
+  var increments = this.options.increments;
+  var increment = track.event().toLowerCase();
+  var people = this.options.people;
+  var props = track.properties();
+  var revenue = track.revenue();
+
+  if (people && ~indexof(increments, increment)) {
+    window.mixpanel.people.increment(track.event());
+    window.mixpanel.people.set('Last ' + track.event(), new Date);
+  }
+
+  props = dates(props, iso);
+  window.mixpanel.track(track.event(), props);
+
+  if (revenue && people) {
+    window.mixpanel.people.track_charge(revenue);
   }
 };
 
@@ -3245,18 +4609,37 @@ Mixpanel.prototype.track = function (event, properties, options) {
  * https://mixpanel.com/help/reference/javascript#user-identity
  * https://mixpanel.com/help/reference/javascript-full-api-reference#mixpanel.alias
  *
- * @param {String} to
- * @param {String} from (optional)
+ * @param {Alias} alias
  */
 
-Mixpanel.prototype.alias = function (to, from) {
+Mixpanel.prototype.alias = function (alias) {
   var mp = window.mixpanel;
+  var to = alias.to();
   if (mp.get_distinct_id && mp.get_distinct_id() === to) return;
   // HACK: internal mixpanel API to ensure we don't overwrite
   if (mp.get_property && mp.get_property('$people_distinct_id') === to) return;
   // although undocumented, mixpanel takes an optional original id
-  mp.alias(to, from);
+  mp.alias(to, alias.from());
 };
+
+/**
+ * Lowercase the given `arr`.
+ * 
+ * @param {Array} arr
+ * @return {Array}
+ * @api private
+ */
+
+function lowercase(arr){
+  var ret = new Array(arr.length);
+
+  for (var i = 0; i < arr.length; ++i) {
+    ret[i] = String(arr[i]).toLowerCase();
+  }
+
+  return ret;
+}
+
 });
 require.register("segmentio-canonical/index.js", function(exports, require, module){
 module.exports = function canonical () {
@@ -3282,6 +4665,972 @@ module.exports = function extend (object) {
 
     return object;
 };
+});
+require.register("camshaft-require-component/index.js", function(exports, require, module){
+/**
+ * Require a module with a fallback
+ */
+module.exports = function(parent) {
+  function require(name, fallback) {
+    try {
+      return parent(name);
+    }
+    catch (e) {
+      try {
+        return parent(fallback || name+"-component");
+      }
+      catch(e2) {
+        throw e;
+      }
+    }
+  };
+
+  // Merge the old properties
+  for (var key in parent) {
+    require[key] = parent[key];
+  }
+
+  return require;
+};
+
+});
+require.register("segmentio-facade/lib/index.js", function(exports, require, module){
+
+var Facade = require('./facade');
+
+/**
+ * Expose `Facade` facade.
+ */
+
+module.exports = Facade;
+
+/**
+ * Expose specific-method facades.
+ */
+
+Facade.Alias = require('./alias');
+Facade.Group = require('./group');
+Facade.Identify = require('./identify');
+Facade.Track = require('./track');
+Facade.Page = require('./page');
+
+});
+require.register("segmentio-facade/lib/alias.js", function(exports, require, module){
+
+var Facade = require('./facade');
+var component = require('require-component')(require);
+var inherit = component('inherit');
+
+/**
+ * Expose `Alias` facade.
+ */
+
+module.exports = Alias;
+
+/**
+ * Initialize a new `Alias` facade with a `dictionary` of arguments.
+ *
+ * @param {Object} dictionary
+ *   @property {String} from
+ *   @property {String} to
+ *   @property {Object} options
+ */
+
+function Alias (dictionary) {
+  Facade.call(this, dictionary);
+}
+
+/**
+ * Inherit from `Facade`.
+ */
+
+inherit(Alias, Facade);
+
+/**
+ * Return type of facade.
+ *
+ * @return {String}
+ */
+
+Alias.prototype.action = function () {
+  return 'alias';
+};
+
+/**
+ * Setup some basic proxies.
+ */
+
+Alias.prototype.from = Facade.field('from');
+Alias.prototype.to = Facade.field('to');
+});
+require.register("segmentio-facade/lib/facade.js", function(exports, require, module){
+
+var component = require('require-component')(require);
+var clone = component('clone');
+var isEnabled = component('./is-enabled');
+var objCase = component('obj-case');
+
+/**
+ * Expose `Facade`.
+ */
+
+module.exports = Facade;
+
+/**
+ * Initialize a new `Facade` with an `obj` of arguments.
+ *
+ * @param {Object} obj
+ */
+
+function Facade (obj) {
+  if (!obj.hasOwnProperty('timestamp')) obj.timestamp = new Date();
+  else obj.timestamp = new Date(obj.timestamp);
+  this.obj = obj;
+}
+
+/**
+ * Return a proxy function for a `field` that will attempt to first use methods,
+ * and fallback to accessing the underlying object directly. You can specify
+ * deeply nested fields too like:
+ *
+ *   this.proxy('options.Librato');
+ *
+ * @param {String} field
+ */
+
+Facade.prototype.proxy = function (field) {
+  var fields = field.split('.');
+  field = fields.shift();
+
+  // Call a function at the beginning to take advantage of facaded fields
+  var obj = this[field] || this.field(field);
+  if (!obj) return obj;
+  if (typeof obj === 'function') obj = obj.call(this) || {};
+  if (fields.length === 0) return clone(obj);
+
+  obj = objCase(obj, fields.join('.'));
+  return clone(obj);
+};
+
+/**
+ * Directly access a specific `field` from the underlying object, returning a
+ * clone so outsiders don't mess with stuff.
+ *
+ * @param {String} field
+ * @return {Mixed}
+ */
+
+Facade.prototype.field = function (field) {
+  return clone(this.obj[field]);
+};
+
+/**
+ * Utility method to always proxy a particular `field`. You can specify deeply
+ * nested fields too like:
+ *
+ *   Facade.proxy('options.Librato');
+ *
+ * @param {String} field
+ * @return {Function}
+ */
+
+Facade.proxy = function (field) {
+  return function () {
+    return this.proxy(field);
+  };
+};
+
+/**
+ * Utility method to directly access a `field`.
+ *
+ * @param {String} field
+ * @return {Function}
+ */
+
+Facade.field = function (field) {
+  return function () {
+    return this.field(field);
+  };
+};
+
+/**
+ * Get the basic json object of this facade.
+ *
+ * @return {Object}
+ */
+
+Facade.prototype.json = function () {
+  return clone(this.obj);
+};
+
+/**
+ * Get the options of a call (formerly called "context"). If you pass an
+ * integration name, it will get the options for that specific integration, or
+ * undefined if the integration is not enabled.
+ *
+ * @param {String} integration (optional)
+ * @return {Object or Null}
+ */
+
+Facade.prototype.options = function (integration) {
+  var options = clone(this.obj.options || this.obj.context) || {};
+  if (!integration) return clone(options);
+  if (!this.enabled(integration)) return;
+  options = options[integration] || objCase(options, integration) || {};
+  return typeof options === 'boolean' ? {} : clone(options);
+};
+
+/**
+ * Check whether an integration is enabled.
+ *
+ * @param {String} integration
+ * @return {Boolean}
+ */
+
+Facade.prototype.enabled = function (integration) {
+  var allEnabled = this.proxy('options.providers.all');
+  if (typeof allEnabled !== 'boolean') allEnabled = this.proxy('options.all');
+  if (typeof allEnabled !== 'boolean') allEnabled = true;
+
+  var enabled = allEnabled && isEnabled(integration);
+  var options = this.options();
+
+  // If the integration is explicitly enabled or disabled, use that
+  // First, check options.providers for backwards compatibility
+  if (options.providers && options.providers.hasOwnProperty(integration)) {
+    enabled = options.providers[integration];
+  }
+
+  // Next, check for the integration's existence in 'options' to enable it.
+  // If the settings are a boolean, use that, otherwise it should be enabled.
+  if (options.hasOwnProperty(integration)) {
+    var settings = options[integration];
+    if (typeof settings === 'boolean') {
+      enabled = settings;
+    } else {
+      enabled = true;
+    }
+  }
+
+  return enabled ? true : false;
+};
+
+/**
+ * Get the `userAgent` option.
+ *
+ * @return {String}
+ */
+
+Facade.prototype.userAgent = function () {};
+
+/**
+ * Check whether the user is active.
+ *
+ * @return {Boolean}
+ */
+
+Facade.prototype.active = function () {
+  var active = this.proxy('options.active');
+  if (active === null || active === undefined) active = true;
+  return active;
+};
+
+/**
+ * Setup some basic proxies.
+ */
+
+Facade.prototype.userId = Facade.field('userId');
+Facade.prototype.sessionId = Facade.field('sessionId');
+Facade.prototype.channel = Facade.field('channel');
+Facade.prototype.timestamp = Facade.field('timestamp');
+Facade.prototype.ip = Facade.proxy('options.ip');
+
+});
+require.register("segmentio-facade/lib/group.js", function(exports, require, module){
+
+var Facade = require('./facade');
+var component = require('require-component')(require);
+var inherit = component('inherit');
+var newDate = component('new-date');
+
+/**
+ * Expose `Group` facade.
+ */
+
+module.exports = Group;
+
+/**
+ * Initialize a new `Group` facade with a `dictionary` of arguments.
+ *
+ * @param {Object} dictionary
+ *   @param {String} userId
+ *   @param {String} groupId
+ *   @param {Object} properties
+ *   @param {Object} options
+ */
+
+function Group (dictionary) {
+  Facade.call(this, dictionary);
+}
+
+/**
+ * Inherit from `Facade`
+ */
+
+inherit(Group, Facade);
+
+/**
+ * Get the facade's action.
+ */
+
+Group.prototype.action = function () {
+  return 'group';
+};
+
+/**
+ * Setup some basic proxies.
+ */
+
+Group.prototype.groupId = Facade.field('groupId');
+
+/**
+ * Get created or createdAt.
+ *
+ * @return {Date}
+ */
+
+Group.prototype.created = function(){
+  var created = this.proxy('traits.createdAt')
+    || this.proxy('traits.created')
+    || this.proxy('properties.createdAt')
+    || this.proxy('properties.created');
+
+  if (created) return newDate(created);
+};
+
+/**
+ * Get the group's traits.
+ *
+ * @param {Object} aliases
+ * @return {Object}
+ */
+
+Group.prototype.traits = function (aliases) {
+  var ret = this.properties();
+  var id = this.groupId();
+  aliases = aliases || {};
+
+  if (id) ret.id = id;
+
+  for (var alias in aliases) {
+    var value = null == this[alias]
+      ? this.proxy('traits.' + alias)
+      : this[alias]();
+    if (null == value) continue;
+    ret[aliases[alias]] = value;
+    delete ret[alias];
+  }
+
+  return ret;
+};
+
+/**
+ * Get traits or properties.
+ *
+ * TODO: remove me
+ *
+ * @return {Object}
+ */
+
+Group.prototype.properties = function(){
+  return this.field('traits')
+    || this.field('properties')
+    || {};
+};
+
+});
+require.register("segmentio-facade/lib/page.js", function(exports, require, module){
+
+var component = require('require-component')(require);
+var Facade = component('./facade');
+var inherit = component('inherit');
+var Track = require('./track');
+
+/**
+ * Expose `Page` facade
+ */
+
+module.exports = Page;
+
+/**
+ * Initialize new `Page` facade with `dictionary`.
+ *
+ * @param {Object} dictionary
+ *   @param {String} category
+ *   @param {String} name
+ *   @param {Object} traits
+ *   @param {Object} options
+ */
+
+function Page(dictionary){
+  Facade.call(this, dictionary);
+}
+
+/**
+ * Inherit from `Facade`
+ */
+
+inherit(Page, Facade);
+
+/**
+ * Get the facade's action.
+ *
+ * @return {String}
+ */
+
+Page.prototype.action = function(){
+  return 'page';
+};
+
+/**
+ * Proxies
+ */
+
+Page.prototype.category = Facade.field('category');
+Page.prototype.name = Facade.field('name');
+
+/**
+ * Get the page properties mixing `category` and `name`.
+ *
+ * @return {Object}
+ */
+
+Page.prototype.properties = function(){
+  var props = this.field('properties') || {};
+  var category = this.category();
+  var name = this.name();
+  if (category) props.category = category;
+  if (name) props.name = name;
+  return props;
+};
+
+/**
+ * Get the page fullName.
+ *
+ * @return {String}
+ */
+
+Page.prototype.fullName = function(){
+  var category = this.category();
+  var name = this.name();
+  return name && category
+    ? category + ' ' + name
+    : name;
+};
+
+/**
+ * Get event with `name`.
+ *
+ * @return {String}
+ */
+
+Page.prototype.event = function(name){
+  return name
+    ? 'Viewed ' + name + ' Page'
+    : 'Loaded a Page';
+};
+
+/**
+ * Convert this Page to a Track facade with `name`.
+ *
+ * @param {String} name
+ * @return {Track}
+ */
+
+Page.prototype.track = function(name){
+  var props = this.properties();
+  return new Track({
+    event: this.event(name),
+    properties: props
+  });
+};
+
+});
+require.register("segmentio-facade/lib/identify.js", function(exports, require, module){
+
+var component = require('require-component')(require);
+var clone = component('clone');
+var Facade = component('./facade');
+var inherit = component('inherit');
+var isEmail = component('is-email');
+var newDate = component('new-date');
+var trim = component('trim');
+
+/**
+ * Expose `Idenfity` facade.
+ */
+
+module.exports = Identify;
+
+/**
+ * Initialize a new `Identify` facade with a `dictionary` of arguments.
+ *
+ * @param {Object} dictionary
+ *   @param {String} userId
+ *   @param {String} sessionId
+ *   @param {Object} traits
+ *   @param {Object} options
+ */
+
+function Identify (dictionary) {
+  Facade.call(this, dictionary);
+}
+
+/**
+ * Inherit from `Facade`.
+ */
+
+inherit(Identify, Facade);
+
+/**
+ * Get the facade's action.
+ */
+
+Identify.prototype.action = function () {
+  return 'identify';
+};
+
+/**
+ * Get the user's traits.
+ *
+ * @param {Object} aliases
+ * @return {Object}
+ */
+
+Identify.prototype.traits = function (aliases) {
+  var ret = this.field('traits') || {};
+  var id = this.userId();
+  aliases = aliases || {};
+
+  if (id) ret.id = id;
+
+  for (var alias in aliases) {
+    var value = null == this[alias]
+      ? this.proxy('traits.' + alias)
+      : this[alias]();
+    if (null == value) continue;
+    ret[aliases[alias]] = value;
+    delete ret[alias];
+  }
+
+  return ret;
+};
+
+/**
+ * Get the user's email, falling back to their user ID if it's a valid email.
+ *
+ * @return {String}
+ */
+
+Identify.prototype.email = function () {
+  var email = this.proxy('traits.email');
+  if (email) return email;
+
+  var userId = this.userId();
+  if (isEmail(userId)) return userId;
+};
+
+/**
+ * Get the user's created date, optionally looking for `createdAt` since lots of
+ * people do that instead.
+ *
+ * @return {Date or Undefined}
+ */
+
+Identify.prototype.created = function () {
+  var created = this.proxy('traits.created') || this.proxy('traits.createdAt');
+  if (created) return newDate(created);
+};
+
+/**
+ * Get the company created date.
+ *
+ * @return {Date or undefined}
+ */
+
+Identify.prototype.companyCreated = function(){
+  var created = this.proxy('traits.company.created')
+    || this.proxy('traits.company.createdAt');
+
+  if (created) return newDate(created);
+};
+
+/**
+ * Get the user's name, optionally combining a first and last name if that's all
+ * that was provided.
+ *
+ * @return {String or Undefined}
+ */
+
+Identify.prototype.name = function () {
+  var name = this.proxy('traits.name');
+  if (typeof name === 'string') return trim(name);
+
+  var firstName = this.firstName();
+  var lastName = this.lastName();
+  if (firstName && lastName) return trim(firstName + ' ' + lastName);
+};
+
+/**
+ * Get the user's first name, optionally splitting it out of a single name if
+ * that's all that was provided.
+ *
+ * @return {String or Undefined}
+ */
+
+Identify.prototype.firstName = function () {
+  var firstName = this.proxy('traits.firstName');
+  if (typeof firstName === 'string') return trim(firstName);
+
+  var name = this.proxy('traits.name');
+  if (typeof name === 'string') return trim(name).split(' ')[0];
+};
+
+/**
+ * Get the user's last name, optionally splitting it out of a single name if
+ * that's all that was provided.
+ *
+ * @return {String or Undefined}
+ */
+
+Identify.prototype.lastName = function () {
+  var lastName = this.proxy('traits.lastName');
+  if (typeof lastName === 'string') return trim(lastName);
+
+  var name = this.proxy('traits.name');
+  if (typeof name !== 'string') return;
+
+  var space = trim(name).indexOf(' ');
+  if (space === -1) return;
+
+  return trim(name.substr(space + 1));
+};
+
+/**
+ * Get the user's unique id.
+ *
+ * @return {String or undefined}
+ */
+
+Identify.prototype.uid = function(){
+  return this.userId()
+    || this.username()
+    || this.email();
+};
+
+/**
+ * Get description.
+ *
+ * @return {String}
+ */
+
+Identify.prototype.description = function(){
+  return this.proxy('traits.description')
+    || this.proxy('traits.background');
+};
+
+/**
+ * Setup sme basic "special" trait proxies.
+ */
+
+Identify.prototype.username = Facade.proxy('traits.username');
+Identify.prototype.website = Facade.proxy('traits.website');
+Identify.prototype.phone = Facade.proxy('traits.phone');
+Identify.prototype.address = Facade.proxy('traits.address');
+Identify.prototype.avatar = Facade.proxy('traits.avatar');
+
+});
+require.register("segmentio-facade/lib/is-enabled.js", function(exports, require, module){
+
+/**
+ * A few integrations are disabled by default. They must be explicitly
+ * enabled by setting options[Provider] = true.
+ */
+
+var disabled = {
+  Salesforce: true,
+  Marketo: true
+};
+
+/**
+ * Check whether an integration should be enabled by default.
+ *
+ * @param {String} integration
+ * @return {Boolean}
+ */
+
+module.exports = function (integration) {
+  return ! disabled[integration];
+};
+});
+require.register("segmentio-facade/lib/track.js", function(exports, require, module){
+
+var component = require('require-component')(require);
+var clone = component('clone');
+var Facade = component('./facade');
+var Identify = component('./identify');
+var inherit = component('inherit');
+var isEmail = component('is-email');
+var traverse = component('isodate-traverse');
+
+/**
+ * Expose `Track` facade.
+ */
+
+module.exports = Track;
+
+/**
+ * Initialize a new `Track` facade with a `dictionary` of arguments.
+ *
+ * @param {object} dictionary
+ *   @property {String} event
+ *   @property {String} userId
+ *   @property {String} sessionId
+ *   @property {Object} properties
+ *   @property {Object} options
+ */
+
+function Track (dictionary) {
+  Facade.call(this, dictionary);
+}
+
+/**
+ * Inherit from `Facade`.
+ */
+
+inherit(Track, Facade);
+
+/**
+ * Return the facade's action.
+ *
+ * @return {String}
+ */
+
+Track.prototype.action = function () {
+  return 'track';
+};
+
+/**
+ * Setup some basic proxies.
+ */
+
+Track.prototype.event = Facade.field('event');
+Track.prototype.value = Facade.proxy('properties.value');
+
+/**
+ * Misc
+ */
+
+Track.prototype.category = Facade.proxy('properties.category');
+Track.prototype.country = Facade.proxy('properties.country');
+Track.prototype.state = Facade.proxy('properties.state');
+Track.prototype.city = Facade.proxy('properties.city');
+Track.prototype.zip = Facade.proxy('properties.zip');
+
+/**
+ * Ecommerce
+ */
+
+Track.prototype.id = Facade.proxy('properties.id');
+Track.prototype.sku = Facade.proxy('properties.sku');
+Track.prototype.tax = Facade.proxy('properties.tax');
+Track.prototype.name = Facade.proxy('properties.name');
+Track.prototype.price = Facade.proxy('properties.price');
+Track.prototype.total = Facade.proxy('properties.total');
+Track.prototype.coupon = Facade.proxy('properties.coupon');
+Track.prototype.orderId = Facade.proxy('properties.orderId');
+Track.prototype.shipping = Facade.proxy('properties.shipping');
+
+/**
+ * Order id.
+ *
+ * @return {String}
+ * @api public
+ */
+
+Track.prototype.orderId = function(){
+  return this.proxy('properties.id')
+    || this.proxy('properties.orderId');
+};
+
+/**
+ * Get subtotal.
+ *
+ * @return {Number}
+ */
+
+Track.prototype.subtotal = function(){
+  var subtotal = this.obj.properties.subtotal;
+  var total = this.total();
+  var n;
+
+  if (subtotal) return subtotal;
+  if (!total) return 0;
+  if (n = this.tax()) total -= n;
+  if (n = this.shipping()) total -= n;
+
+  return total;
+};
+
+/**
+ * Get products.
+ *
+ * @return {Array}
+ */
+
+Track.prototype.products = function(){
+  var props = this.obj.properties || {};
+  return props.products || [];
+};
+
+/**
+ * Get quantity.
+ *
+ * @return {Number}
+ */
+
+Track.prototype.quantity = function(){
+  var props = this.obj.properties || {};
+  return props.quantity || 1;
+};
+
+/**
+ * Get currency.
+ *
+ * @return {String}
+ */
+
+Track.prototype.currency = function(){
+  var props = this.obj.properties || {};
+  return props.currency || 'USD';
+};
+
+/**
+ * BACKWARDS COMPATIBILITY: should probably re-examine where these come from.
+ */
+
+Track.prototype.referrer = Facade.proxy('properties.referrer');
+Track.prototype.query = Facade.proxy('options.query');
+
+/**
+ * Get the call's properties.
+ *
+ * @param {Object} aliases
+ * @return {Object}
+ */
+
+Track.prototype.properties = function (aliases) {
+  var ret = this.field('properties') || {};
+  aliases = aliases || {};
+
+  for (var alias in aliases) {
+    var value = null == this[alias]
+      ? this.proxy('properties.' + alias)
+      : this[alias]();
+    if (null == value) continue;
+    ret[aliases[alias]] = value;
+    delete ret[alias];
+  }
+
+  return clone(traverse(ret));
+};
+
+/**
+ * Get the call's "super properties" which are just traits that have been
+ * passed in as if from an identify call.
+ *
+ * @return {Object}
+ */
+
+Track.prototype.traits = function () {
+  return this.proxy('options.traits') || {};
+};
+
+/**
+ * Get the call's username.
+ *
+ * @return {String or Undefined}
+ */
+
+Track.prototype.username = function () {
+  return this.proxy('traits.username') ||
+         this.proxy('properties.username') ||
+         this.userId() ||
+         this.sessionId();
+};
+
+/**
+ * Get the call's email, using an the user ID if it's a valid email.
+ *
+ * @return {String or Undefined}
+ */
+
+Track.prototype.email = function () {
+  var email = this.proxy('traits.email');
+  if (email) return email;
+
+  var userId = this.userId();
+  if (isEmail(userId)) return userId;
+};
+
+/**
+ * Get the call's revenue, parsing it from a string with an optional leading
+ * dollar sign.
+ *
+ * @return {String or Undefined}
+ */
+
+Track.prototype.revenue = function () {
+  var revenue = this.proxy('properties.revenue');
+
+  if (!revenue) return;
+  if (typeof revenue === 'number') return revenue;
+  if (typeof revenue !== 'string') return;
+
+  revenue = revenue.replace(/\$/g, '');
+  revenue = parseFloat(revenue);
+
+  if (!isNaN(revenue)) return revenue;
+};
+
+/**
+ * Get cents.
+ *
+ * @return {Number}
+ */
+
+Track.prototype.cents = function(){
+  var revenue = this.revenue();
+  return 'number' != typeof revenue
+    ? this.value() || 0
+    : revenue * 100;
+};
+
+/**
+ * A utility to turn the pieces of a track call into an identify. Used for
+ * integrations with super properties or rate limits.
+ *
+ * TODO: remove me.
+ *
+ * @return {Facade}
+ */
+
+Track.prototype.identify = function () {
+  var json = this.json();
+  json.traits = this.traits();
+  return new Identify(json);
+};
+
 });
 require.register("segmentio-is-email/index.js", function(exports, require, module){
 
@@ -3398,11 +5747,15 @@ exports.is = function (string, strict) {
 });
 require.register("segmentio-isodate-traverse/index.js", function(exports, require, module){
 
-var clone = require('clone')
-  , each = require('each')
-  , is = require('is')
-  , isodate = require('isodate');
+var is = require('is');
+var isodate = require('isodate');
+var each;
 
+try {
+  each = require('each');
+} catch (err) {
+  each = require('each-component');
+}
 
 /**
  * Expose `traverse`.
@@ -3410,31 +5763,67 @@ var clone = require('clone')
 
 module.exports = traverse;
 
-
 /**
- * Traverse an object, parsing all ISO strings into dates and returning a clone.
+ * Traverse an object or array, and return a clone with all ISO strings parsed
+ * into Date objects.
  *
  * @param {Object} obj
  * @return {Object}
  */
 
-function traverse (obj, strict) {
-  obj = clone(obj);
+function traverse (input, strict) {
   if (strict === undefined) strict = true;
+
+  if (is.object(input)) {
+    return object(input, strict);
+  } else if (is.array(input)) {
+    return array(input, strict);
+  }
+}
+
+/**
+ * Object traverser.
+ *
+ * @param {Object} obj
+ * @param {Boolean} strict
+ * @return {Object}
+ */
+
+function object (obj, strict) {
   each(obj, function (key, val) {
     if (isodate.is(val, strict)) {
       obj[key] = isodate.parse(val);
-    } else if (is.object(val)) {
-      obj[key] = traverse(val);
+    } else if (is.object(val) || is.array(val)) {
+      traverse(val, strict);
     }
   });
   return obj;
 }
+
+/**
+ * Array traverser.
+ *
+ * @param {Array} arr
+ * @param {Boolean} strict
+ * @return {Array}
+ */
+
+function array (arr, strict) {
+  each(arr, function (val, x) {
+    if (is.object(val)) {
+      traverse(val, strict);
+    } else if (isodate.is(val, strict)) {
+      arr[x] = isodate.parse(val);
+    }
+  });
+  return arr;
+}
+
 });
 require.register("component-json-fallback/index.js", function(exports, require, module){
 /*
     json2.js
-    2011-10-19
+    2014-02-04
 
     Public Domain.
 
@@ -3593,10 +5982,10 @@ require.register("component-json-fallback/index.js", function(exports, require, 
 // Create a JSON object only if one does not already exist. We create the
 // methods in a closure to avoid creating global variables.
 
-var JSON = {};
-
 (function () {
     'use strict';
+
+    var JSON = module.exports = {};
 
     function f(n) {
         // Format integers to have at least two digits.
@@ -3605,7 +5994,7 @@ var JSON = {};
 
     if (typeof Date.prototype.toJSON !== 'function') {
 
-        Date.prototype.toJSON = function (key) {
+        Date.prototype.toJSON = function () {
 
             return isFinite(this.valueOf())
                 ? this.getUTCFullYear()     + '-' +
@@ -3619,24 +6008,16 @@ var JSON = {};
 
         String.prototype.toJSON      =
             Number.prototype.toJSON  =
-            Boolean.prototype.toJSON = function (key) {
+            Boolean.prototype.toJSON = function () {
                 return this.valueOf();
             };
     }
 
-    var cx = /[\u0000\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g,
-        escapable = /[\\\"\x00-\x1f\x7f-\x9f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g,
+    var cx,
+        escapable,
         gap,
         indent,
-        meta = {    // table of character substitutions
-            '\b': '\\b',
-            '\t': '\\t',
-            '\n': '\\n',
-            '\f': '\\f',
-            '\r': '\\r',
-            '"' : '\\"',
-            '\\': '\\\\'
-        },
+        meta,
         rep;
 
 
@@ -3788,6 +6169,16 @@ var JSON = {};
 // If the JSON object does not yet have a stringify method, give it one.
 
     if (typeof JSON.stringify !== 'function') {
+        escapable = /[\\\"\x00-\x1f\x7f-\x9f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+        meta = {    // table of character substitutions
+            '\b': '\\b',
+            '\t': '\\t',
+            '\n': '\\n',
+            '\f': '\\f',
+            '\r': '\\r',
+            '"' : '\\"',
+            '\\': '\\\\'
+        };
         JSON.stringify = function (value, replacer, space) {
 
 // The stringify method takes a value and an optional replacer, and an optional
@@ -3835,6 +6226,7 @@ var JSON = {};
 // If the JSON object does not yet have a parse method, give it one.
 
     if (typeof JSON.parse !== 'function') {
+        cx = /[\u0000\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
         JSON.parse = function (text, reviver) {
 
 // The parse method takes a text and an optional reviver function, and returns
@@ -3917,13 +6309,16 @@ var JSON = {};
     }
 }());
 
-module.exports = JSON
 });
 require.register("segmentio-json/index.js", function(exports, require, module){
 
-module.exports = 'undefined' == typeof JSON
-  ? require('json-fallback')
-  : JSON;
+var json = window.JSON || {};
+var stringify = json.stringify;
+var parse = json.parse;
+
+module.exports = parse && stringify
+  ? JSON
+  : require('json-fallback');
 
 });
 require.register("segmentio-new-date/lib/index.js", function(exports, require, module){
@@ -4203,29 +6598,6 @@ module.exports = function (urlStr) {
   return topLevel ? topLevel[0] : host;
 };
 });
-require.register("yields-prevent/index.js", function(exports, require, module){
-
-/**
- * prevent default on the given `e`.
- *
- * examples:
- *
- *      anchor.onclick = prevent;
- *      anchor.onclick = function(e){
- *        if (something) return prevent(e);
- *      };
- *
- * @param {Event} e
- */
-
-module.exports = function(e){
-  e = e || window.event
-  return e.preventDefault
-    ? e.preventDefault()
-    : e.returnValue = false;
-};
-
-});
 require.register("visionmedia-debug/index.js", function(exports, require, module){
 if ('undefined' == typeof window) {
   module.exports = require('./lib/debug');
@@ -4374,17 +6746,40 @@ try {
 } catch(e){}
 
 });
+require.register("yields-prevent/index.js", function(exports, require, module){
+
+/**
+ * prevent default on the given `e`.
+ * 
+ * examples:
+ * 
+ *      anchor.onclick = prevent;
+ *      anchor.onclick = function(e){
+ *        if (something) return prevent(e);
+ *      };
+ * 
+ * @param {Event} e
+ */
+
+module.exports = function(e){
+  e = e || window.event
+  return e.preventDefault
+    ? e.preventDefault()
+    : e.returnValue = false;
+};
+
+});
 require.register("analytics/lib/index.js", function(exports, require, module){
+
 /**
  * Analytics.js
  *
  * (C) 2013 Segment.io Inc.
  */
 
-var Analytics = require('./analytics');
-var createIntegration = require('integration');
-var each = require('each');
 var Integrations = require('integrations');
+var Analytics = require('./analytics');
+var each = require('each');
 
 
 /**
@@ -4393,12 +6788,17 @@ var Integrations = require('integrations');
 
 var analytics = module.exports = exports = new Analytics();
 
+/**
+ * Expose require
+ */
+
+analytics.require = require;
 
 /**
  * Expose `VERSION`.
  */
 
-exports.VERSION = '1.0.8';
+exports.VERSION = '1.3.30';
 
 
 /**
@@ -4408,6 +6808,7 @@ exports.VERSION = '1.0.8';
 each(Integrations, function (name, Integration) {
   analytics.use(Integration);
 });
+
 });
 require.register("analytics/lib/analytics.js", function(exports, require, module){
 
@@ -4431,9 +6832,14 @@ var prevent = require('prevent');
 var querystring = require('querystring');
 var size = require('object').length;
 var store = require('./store');
-var traverse = require('isodate-traverse');
 var url = require('url');
 var user = require('./user');
+var Facade = require('facade');
+var Identify = Facade.Identify;
+var Group = Facade.Group;
+var Alias = Facade.Alias;
+var Track = Facade.Track;
+var Page = Facade.Page;
 
 
 /**
@@ -4574,14 +6980,21 @@ Analytics.prototype.identify = function (id, traits, options, fn) {
   if (is.fn(traits)) fn = traits, options = null, traits = null;
   if (is.object(id)) options = traits, traits = id, id = user.id();
 
-  user.identify(id, traits);
 
   // clone traits before we manipulate so we don't do anything uncouth, and take
   // from `user` so that we carryover anonymous traits
+  user.identify(id, traits);
   id = user.id();
-  traits = cleanTraits(id, user.traits());
+  traits = user.traits();
 
-  this._invoke('identify', id, traits, options);
+  this._invoke('identify', new Identify({
+    options: options,
+    traits: traits,
+    userId: id
+  }));
+
+  // emit
+  this.emit('identify', id, traits, options);
   this._callback(fn);
   return this;
 };
@@ -4599,32 +7012,35 @@ Analytics.prototype.user = function () {
 
 
 /**
- * Identify a group by optional `id` and `properties`. Or, if no arguments are
+ * Identify a group by optional `id` and `traits`. Or, if no arguments are
  * supplied, return the current group.
  *
  * @param {String} id (optional)
- * @param {Object} properties (optional)
+ * @param {Object} traits (optional)
  * @param {Object} options (optional)
  * @param {Function} fn (optional)
  * @return {Analytics or Object}
  */
 
-Analytics.prototype.group = function (id, properties, options, fn) {
+Analytics.prototype.group = function (id, traits, options, fn) {
   if (0 === arguments.length) return group;
   if (is.fn(options)) fn = options, options = null;
-  if (is.fn(properties)) fn = properties, options = null, properties = null;
-  if (is.object(id)) options = properties, properties = id, id = group.id();
+  if (is.fn(traits)) fn = traits, options = null, traits = null;
+  if (is.object(id)) options = traits, traits = id, id = group.id();
 
-  group.identify(id, properties);
 
   // grab from group again to make sure we're taking from the source
+  group.identify(id, traits);
   id = group.id();
-  properties = group.properties();
+  traits = group.traits();
 
-  // convert a create date to a date
-  if (properties.created) properties.created = newDate(properties.created);
+  this._invoke('group', new Group({
+    options: options,
+    traits: traits,
+    groupId: id
+  }));
 
-  this._invoke('group', id, properties, options);
+  this.emit('group', id, traits, options);
   this._callback(fn);
   return this;
 };
@@ -4644,9 +7060,13 @@ Analytics.prototype.track = function (event, properties, options, fn) {
   if (is.fn(options)) fn = options, options = null;
   if (is.fn(properties)) fn = properties, options = null, properties = null;
 
-  properties = traverse(clone(properties)) || {};
+  this._invoke('track', new Track({
+    properties: properties,
+    options: options,
+    event: event
+  }));
 
-  this._invoke('track', event, properties, options);
+  this.emit('track', event, properties, options);
   this._callback(fn);
   return this;
 };
@@ -4750,19 +7170,32 @@ Analytics.prototype.page = function (category, name, properties, options, fn) {
   if (is.fn(options)) fn = options, options = null;
   if (is.fn(properties)) fn = properties, options = properties = null;
   if (is.fn(name)) fn = name, options = properties = name = null;
+  if (is.object(category)) options = name, properties = category, name = category = null;
   if (is.object(name)) options = properties, properties = name, name = null;
-  if (is.object(category)) options = properties, properties = name, name = category = null;
   if (is.string(category) && !is.string(name)) name = category, category = null;
 
-  properties = clone(properties) || {};
-  defaults(properties, {
+  var defs = {
     path: canonicalPath(),
     referrer: document.referrer,
     title: document.title,
-    url: location.href
-  });
+    search: location.search
+  };
 
-  this._invoke('page', category, name, properties, options);
+  if (name) defs.name = name;
+  if (category) defs.category = category;
+
+  properties = clone(properties) || {};
+  defaults(properties, defs);
+  properties.url = properties.url || canonicalUrl(properties.search);
+
+  this._invoke('page', new Page({
+    properties: properties,
+    category: category,
+    options: options,
+    name: name
+  }));
+
+  this.emit('page', category, name, properties, options);
   this._callback(fn);
   return this;
 };
@@ -4799,7 +7232,14 @@ Analytics.prototype.alias = function (to, from, options, fn) {
   if (is.fn(options)) fn = options, options = null;
   if (is.fn(from)) fn = from, options = null, from = null;
   if (is.object(from)) options = from, from = null;
-  this._invoke('alias', to, from, options);
+
+  this._invoke('alias', new Alias({
+    options: options,
+    from: from,
+    to: to
+  }));
+
+  this.emit('alias', to, from, options);
   this._callback(fn);
   return this;
 };
@@ -4880,30 +7320,39 @@ Analytics.prototype._callback = function (fn) {
 
 
 /**
- * Call a `method` on all of initialized integrations, passing clones of arguments
- * along to keep each integration isolated.
- *
- * TODO: check integration enabled
+ * Call `method` with `facade` on all enabled integrations.
  *
  * @param {String} method
- * @param {Mixed} args...
+ * @param {Facade} facade
  * @return {Analytics}
  * @api private
  */
 
-Analytics.prototype._invoke = function () {
-  var args = [].slice.call(arguments);
-  var options = args[args.length-1]; // always the last one
+Analytics.prototype._invoke = function (method, facade) {
+  var options = facade.options();
+
+  this.emit('invoke', facade);
 
   each(this._integrations, function (name, integration) {
-    if (!isEnabled(integration, options)) return;
-    integration.invoke.apply(integration, clone(args));
+    if (!facade.enabled(name)) return;
+    integration.invoke.call(integration, method, facade);
   });
 
-  this.emit.apply(this, clone(args));
   return this;
 };
 
+/**
+ * Push `args`.
+ *
+ * @param {Array} args
+ * @api private
+ */
+
+Analytics.prototype.push = function(args){
+  var method = args.shift();
+  if (!this[method]) return;
+  this[method].apply(this, args);
+};
 
 /**
  * Parse the query string for callable methods.
@@ -4922,59 +7371,6 @@ Analytics.prototype._parseQuery = function () {
 
 
 /**
- * Determine whether a `integration` is enabled or not based on `options`.
- *
- * @param {Object} integration
- * @param {Object} options
- * @return {Boolean}
- */
-
-function isEnabled (integration, options) {
-  var enabled = true;
-  if (!options || !options.providers) return enabled;
-
-  // Default to the 'all' or 'All' setting.
-  var map = options.providers;
-  if (map.all !== undefined) enabled = map.all;
-  if (map.All !== undefined) enabled = map.All;
-
-  // Look for this integration's specific setting.
-  var name = integration.name;
-  if (map[name] !== undefined) enabled = map[name];
-
-  return enabled;
-}
-
-
-/**
- * Clean up traits, default some useful things both so the user doesn't have to
- * and so we don't have to do it on a integration-basis.
- *
- * @param {Object} traits
- * @return {Object}
- */
-
-function cleanTraits (userId, traits) {
-  // Add the `email` trait if it doesn't exist and the `userId` is an email.
-  if (!traits.email && isEmail(userId)) traits.email = userId;
-
-  // Create the `name` trait if it doesn't exist and `firstName` and `lastName`
-  // are both supplied.
-  if (!traits.name && traits.firstName && traits.lastName) {
-    traits.name = traits.firstName + ' ' + traits.lastName;
-  }
-
-  // Convert dates from more types of input into Date objects.
-  if (traits.created) traits.created = newDate(traits.created);
-  if (traits.company && traits.company.created) {
-    traits.company.created = newDate(traits.company.created);
-  }
-
-  return traits;
-}
-
-
-/**
  * Return the canonical path for the page.
  *
  * @return {String}
@@ -4986,6 +7382,23 @@ function canonicalPath () {
   var parsed = url.parse(canon);
   return parsed.pathname;
 }
+
+/**
+ * Return the canonical URL for the page concat the given `search`
+ * and strip the hash.
+ *
+ * @param {String} search
+ * @return {String}
+ */
+
+function canonicalUrl (search) {
+  var canon = canonical();
+  if (canon) return ~canon.indexOf('?') ? canon : canon + search;
+  var url = window.location.href;
+  var i = url.indexOf('#');
+  return -1 == i ? url : url.slice(0, i);
+}
+
 });
 require.register("analytics/lib/cookie.js", function(exports, require, module){
 
@@ -5105,28 +7518,31 @@ module.exports = bind.all(new Cookie());
 
 module.exports.Cookie = Cookie;
 });
-require.register("analytics/lib/group.js", function(exports, require, module){
+require.register("analytics/lib/entity.js", function(exports, require, module){
 
-var debug = require('debug')('analytics:group');
-var bind = require('bind');
-var clone = require('clone');
-var cookie = require('./cookie');
-var defaults = require('defaults');
-var extend = require('extend');
-var store = require('./store');
 var traverse = require('isodate-traverse');
+var defaults = require('defaults');
+var cookie = require('./cookie');
+var store = require('./store');
+var extend = require('extend');
+var clone = require('clone');
 
 
 /**
- * Initialize a new `Group` with `options`.
+ * Expose `Entity`
+ */
+
+module.exports = Entity;
+
+
+/**
+ * Initialize new `Entity` with `options`.
  *
  * @param {Object} options
  */
 
-function Group (options) {
+function Entity(options){
   this.options(options);
-  this.id(null);
-  this.properties({});
 }
 
 
@@ -5139,31 +7555,21 @@ function Group (options) {
  *   @property {Boolean} persist (default: `true`)
  */
 
-Group.prototype.options = function (options) {
+Entity.prototype.options = function (options) {
   if (arguments.length === 0) return this._options;
   options || (options = {});
-
-  defaults(options, {
-    persist: true,
-    cookie: {
-      key: 'ajs_group_id'
-    },
-    localStorage: {
-      key: 'ajs_group_properties'
-    }
-  });
-
+  defaults(options, this.defaults || {});
   this._options = options;
 };
 
 
 /**
- * Get or set the group's `id`.
+ * Get or set the entity's `id`.
  *
  * @param {String} id
  */
 
-Group.prototype.id = function (id) {
+Entity.prototype.id = function (id) {
   switch (arguments.length) {
     case 0: return this._getId();
     case 1: return this._setId(id);
@@ -5172,12 +7578,12 @@ Group.prototype.id = function (id) {
 
 
 /**
- * Get the group's id.
+ * Get the entity's id.
  *
  * @return {String}
  */
 
-Group.prototype._getId = function () {
+Entity.prototype._getId = function () {
   var ret = this._options.persist
     ? cookie.get(this._options.cookie.key)
     : this._id;
@@ -5186,12 +7592,12 @@ Group.prototype._getId = function () {
 
 
 /**
- * Set the group's `id`.
+ * Set the entity's `id`.
  *
  * @param {String} id
  */
 
-Group.prototype._setId = function (id) {
+Entity.prototype._setId = function (id) {
   if (this._options.persist) {
     cookie.set(this._options.cookie.key, id);
   } else {
@@ -5201,113 +7607,160 @@ Group.prototype._setId = function (id) {
 
 
 /**
- * Get or set the group's `properties`.
+ * Get or set the entity's `traits`.
  *
- * @param {String} properties
+ * BACKWARDS COMPATIBILITY: aliased to `properties`
+ *
+ * @param {Object} traits
  */
 
-Group.prototype.properties = function (properties) {
+Entity.prototype.properties =
+Entity.prototype.traits = function (traits) {
   switch (arguments.length) {
-    case 0: return this._getProperties();
-    case 1: return this._setProperties(properties);
+    case 0: return this._getTraits();
+    case 1: return this._setTraits(traits);
   }
 };
 
 
 /**
- * Get the group's properties. Always convert ISO date strings into real dates,
+ * Get the entity's traits. Always convert ISO date strings into real dates,
  * since they aren't parsed back from local storage.
  *
  * @return {Object}
  */
 
-Group.prototype._getProperties = function () {
+Entity.prototype._getTraits = function () {
   var ret = this._options.persist
     ? store.get(this._options.localStorage.key)
-    : this._properties;
+    : this._traits;
   return ret ? traverse(clone(ret)) : {};
 };
 
 
 /**
- * Set the group's `properties`.
+ * Set the entity's `traits`.
  *
- * @param {Object} properties
+ * @param {Object} traits
  */
 
-Group.prototype._setProperties = function (properties) {
-  properties || (properties = {});
+Entity.prototype._setTraits = function (traits) {
+  traits || (traits = {});
   if (this._options.persist) {
-    store.set(this._options.localStorage.key, properties);
+    store.set(this._options.localStorage.key, traits);
   } else {
-    this._properties = properties;
+    this._traits = traits;
   }
 };
 
 
 /**
- * Idenfity the group with an `id` and `properties`. If we it's the same group,
- * extend the existing `properties` instead of overwriting.
+ * Identify the entity with an `id` and `traits`. If we it's the same entity,
+ * extend the existing `traits` instead of overwriting.
  *
  * @param {String} id
- * @param {Object} properties
+ * @param {Object} traits
  */
 
-Group.prototype.identify = function (id, properties) {
-  properties || (properties = {});
+Entity.prototype.identify = function (id, traits) {
+  traits || (traits = {});
   var current = this.id();
-  if (current === null || current === id) properties = extend(this.properties(), properties);
+  if (current === null || current === id) traits = extend(this.traits(), traits);
   if (id) this.id(id);
-  debug('identify %o, %o', id, properties);
-  this.properties(properties);
+  this.debug('identify %o, %o', id, traits);
+  this.traits(traits);
   this.save();
 };
 
 
 /**
- * Save the group to local storage and the cookie.
+ * Save the entity to local storage and the cookie.
  *
  * @return {Boolean}
  */
 
-Group.prototype.save = function () {
+Entity.prototype.save = function () {
   if (!this._options.persist) return false;
   cookie.set(this._options.cookie.key, this.id());
-  store.set(this._options.localStorage.key, this.properties());
+  store.set(this._options.localStorage.key, this.traits());
   return true;
 };
 
 
 /**
- * Log the group out, reseting `id` and `properties` to defaults.
+ * Log the entity out, reseting `id` and `traits` to defaults.
  */
 
-Group.prototype.logout = function () {
+Entity.prototype.logout = function () {
   this.id(null);
-  this.properties({});
+  this.traits({});
   cookie.remove(this._options.cookie.key);
   store.remove(this._options.localStorage.key);
 };
 
 
 /**
- * Reset all group state, logging out and returning options to defaults.
+ * Reset all entity state, logging out and returning options to defaults.
  */
 
-Group.prototype.reset = function () {
+Entity.prototype.reset = function () {
   this.logout();
   this.options({});
 };
 
 
 /**
- * Load saved group `id` or `properties` from storage.
+ * Load saved entity `id` or `traits` from storage.
  */
 
-Group.prototype.load = function () {
+Entity.prototype.load = function () {
   this.id(cookie.get(this._options.cookie.key));
-  this.properties(store.get(this._options.localStorage.key));
+  this.traits(store.get(this._options.localStorage.key));
 };
+
+
+});
+require.register("analytics/lib/group.js", function(exports, require, module){
+
+var debug = require('debug')('analytics:group');
+var Entity = require('./entity');
+var inherit = require('inherit');
+var bind = require('bind');
+
+
+/**
+ * Group defaults
+ */
+
+Group.defaults = {
+  persist: true,
+  cookie: {
+    key: 'ajs_group_id'
+  },
+  localStorage: {
+    key: 'ajs_group_properties'
+  }
+};
+
+
+/**
+ * Initialize a new `Group` with `options`.
+ *
+ * @param {Object} options
+ */
+
+function Group (options) {
+  this.defaults = Group.defaults;
+  this.debug = debug;
+  Entity.call(this, options);
+}
+
+
+/**
+ * Inherit `Entity`
+ */
+
+inherit(Group, Entity);
 
 
 /**
@@ -5414,13 +7867,26 @@ module.exports.Store = Store;
 require.register("analytics/lib/user.js", function(exports, require, module){
 
 var debug = require('debug')('analytics:user');
+var Entity = require('./entity');
+var inherit = require('inherit');
 var bind = require('bind');
-var clone = require('clone');
 var cookie = require('./cookie');
-var defaults = require('defaults');
-var extend = require('extend');
-var store = require('./store');
-var traverse = require('isodate-traverse');
+
+
+/**
+ * User defaults
+ */
+
+User.defaults = {
+  persist: true,
+  cookie: {
+    key: 'ajs_user_id',
+    oldKey: 'ajs_user'
+  },
+  localStorage: {
+    key: 'ajs_user_traits'
+  }
+};
 
 
 /**
@@ -5430,181 +7896,17 @@ var traverse = require('isodate-traverse');
  */
 
 function User (options) {
-  this.options(options);
-  this.id(null);
-  this.traits({});
+  this.defaults = User.defaults;
+  this.debug = debug;
+  Entity.call(this, options);
 }
 
 
 /**
- * Get or set storage `options`.
- *
- * @param {Object} options
- *   @property {Object} cookie
- *   @property {Object} localStorage
- *   @property {Boolean} persist (default: `true`)
+ * Inherit `Entity`
  */
 
-User.prototype.options = function (options) {
-  if (arguments.length === 0) return this._options;
-  options || (options = {});
-
-  defaults(options, {
-    persist: true,
-    cookie: {
-      key: 'ajs_user_id',
-      oldKey: 'ajs_user'
-    },
-    localStorage: {
-      key: 'ajs_user_traits'
-    }
-  });
-
-  this._options = options;
-};
-
-
-/**
- * Get or set the user's `id`.
- *
- * @param {String} id
- */
-
-User.prototype.id = function (id) {
-  switch (arguments.length) {
-    case 0: return this._getId();
-    case 1: return this._setId(id);
-  }
-};
-
-
-/**
- * Get the user's id.
- *
- * @return {String}
- */
-
-User.prototype._getId = function () {
-  var ret = this._options.persist
-    ? cookie.get(this._options.cookie.key)
-    : this._id;
-  return ret === undefined ? null : ret;
-};
-
-
-/**
- * Set the user's `id`.
- *
- * @param {String} id
- */
-
-User.prototype._setId = function (id) {
-  if (this._options.persist) {
-    cookie.set(this._options.cookie.key, id);
-  } else {
-    this._id = id;
-  }
-};
-
-
-/**
- * Get or set the user's `traits`.
- *
- * @param {String} traits
- */
-
-User.prototype.traits = function (traits) {
-  switch (arguments.length) {
-    case 0: return this._getTraits();
-    case 1: return this._setTraits(traits);
-  }
-};
-
-
-/**
- * Get the user's traits. Always convert ISO date strings into real dates, since
- * they aren't parsed back from local storage.
- *
- * @return {Object}
- */
-
-User.prototype._getTraits = function () {
-  var ret = this._options.persist
-    ? store.get(this._options.localStorage.key)
-    : this._traits;
-  return ret ? traverse(clone(ret)) : {};
-};
-
-
-/**
- * Set the user's `traits`.
- *
- * @param {Object} traits
- */
-
-User.prototype._setTraits = function (traits) {
-  traits || (traits = {});
-  if (this._options.persist) {
-    store.set(this._options.localStorage.key, traits);
-  } else {
-    this._traits = traits;
-  }
-};
-
-
-/**
- * Idenfity the user with an `id` and `traits`. If we it's the same user, extend
- * the existing `traits` instead of overwriting.
- *
- * @param {String} id
- * @param {Object} traits
- */
-
-User.prototype.identify = function (id, traits) {
-  traits || (traits = {});
-  var current = this.id();
-  if (current === null || current === id) traits = extend(this.traits(), traits);
-  if (id) this.id(id);
-  debug('identify %o, %o', id, traits);
-  this.traits(traits);
-  this.save();
-};
-
-
-/**
- * Save the user to local storage and the cookie.
- *
- * @return {Boolean}
- */
-
-User.prototype.save = function () {
-  if (!this._options.persist) return false;
-  cookie.set(this._options.cookie.key, this.id());
-  store.set(this._options.localStorage.key, this.traits());
-  return true;
-};
-
-
-/**
- * Log the user out, reseting `id` and `traits` to defaults.
- */
-
-User.prototype.logout = function () {
-  this.id(null);
-  this.traits({});
-  cookie.remove(this._options.cookie.key);
-  store.remove(this._options.localStorage.key);
-};
-
-
-/**
- * Reset all user state, logging out and returning options to defaults.
- */
-
-User.prototype.reset = function () {
-  this.logout();
-  this.options({});
-};
+inherit(User, Entity);
 
 
 /**
@@ -5613,8 +7915,7 @@ User.prototype.reset = function () {
 
 User.prototype.load = function () {
   if (this._loadOldCookie()) return;
-  this.id(cookie.get(this._options.cookie.key));
-  this.traits(store.get(this._options.localStorage.key));
+  Entity.prototype.load.call(this);
 };
 
 
@@ -5688,6 +7989,94 @@ module.exports.User = User;
 
 
 
+
+
+
+
+
+
+
+
+require.register("segmentio-analytics.js-integrations/lib/slugs.json", function(exports, require, module){
+module.exports = [
+  "google-analytics",
+  "intercom",
+  "keen-io",
+  "kissmetrics",
+  "mixpanel"
+]
+
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 require.alias("avetisk-defaults/index.js", "analytics/deps/defaults/index.js");
 require.alias("avetisk-defaults/index.js", "defaults/index.js");
 
@@ -5709,12 +8098,17 @@ require.alias("component-indexof/index.js", "component-emitter/deps/indexof/inde
 require.alias("component-event/index.js", "analytics/deps/event/index.js");
 require.alias("component-event/index.js", "event/index.js");
 
+require.alias("component-inherit/index.js", "analytics/deps/inherit/index.js");
+require.alias("component-inherit/index.js", "inherit/index.js");
+
 require.alias("component-object/index.js", "analytics/deps/object/index.js");
 require.alias("component-object/index.js", "object/index.js");
 
 require.alias("component-querystring/index.js", "analytics/deps/querystring/index.js");
 require.alias("component-querystring/index.js", "querystring/index.js");
 require.alias("component-trim/index.js", "component-querystring/deps/trim/index.js");
+
+require.alias("component-type/index.js", "component-querystring/deps/type/index.js");
 
 require.alias("component-url/index.js", "analytics/deps/url/index.js");
 require.alias("component-url/index.js", "url/index.js");
@@ -5741,40 +8135,6 @@ require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-emp
 require.alias("segmentio-after/index.js", "analytics/deps/after/index.js");
 require.alias("segmentio-after/index.js", "after/index.js");
 
-require.alias("segmentio-analytics.js-integration/lib/index.js", "analytics/deps/integration/lib/index.js");
-require.alias("segmentio-analytics.js-integration/lib/protos.js", "analytics/deps/integration/lib/protos.js");
-require.alias("segmentio-analytics.js-integration/lib/statics.js", "analytics/deps/integration/lib/statics.js");
-require.alias("segmentio-analytics.js-integration/lib/index.js", "analytics/deps/integration/index.js");
-require.alias("segmentio-analytics.js-integration/lib/index.js", "integration/index.js");
-require.alias("avetisk-defaults/index.js", "segmentio-analytics.js-integration/deps/defaults/index.js");
-
-require.alias("component-clone/index.js", "segmentio-analytics.js-integration/deps/clone/index.js");
-require.alias("component-type/index.js", "component-clone/deps/type/index.js");
-
-require.alias("component-emitter/index.js", "segmentio-analytics.js-integration/deps/emitter/index.js");
-require.alias("component-indexof/index.js", "component-emitter/deps/indexof/index.js");
-
-require.alias("ianstormtaylor-bind/index.js", "segmentio-analytics.js-integration/deps/bind/index.js");
-require.alias("component-bind/index.js", "ianstormtaylor-bind/deps/bind/index.js");
-
-require.alias("segmentio-bind-all/index.js", "ianstormtaylor-bind/deps/bind-all/index.js");
-require.alias("component-bind/index.js", "segmentio-bind-all/deps/bind/index.js");
-
-require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js");
-
-require.alias("ianstormtaylor-callback/index.js", "segmentio-analytics.js-integration/deps/callback/index.js");
-require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
-
-require.alias("segmentio-after/index.js", "segmentio-analytics.js-integration/deps/after/index.js");
-
-require.alias("timoxley-next-tick/index.js", "segmentio-analytics.js-integration/deps/next-tick/index.js");
-
-require.alias("yields-slug/index.js", "segmentio-analytics.js-integration/deps/slug/index.js");
-
-require.alias("visionmedia-debug/index.js", "segmentio-analytics.js-integration/deps/debug/index.js");
-require.alias("visionmedia-debug/debug.js", "segmentio-analytics.js-integration/deps/debug/debug.js");
-
-require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integration/index.js");
 require.alias("segmentio-analytics.js-integrations/index.js", "analytics/deps/integrations/index.js");
 require.alias("segmentio-analytics.js-integrations/lib/google-analytics.js", "analytics/deps/integrations/lib/google-analytics.js");
 require.alias("segmentio-analytics.js-integrations/lib/intercom.js", "analytics/deps/integrations/lib/intercom.js");
@@ -5782,6 +8142,8 @@ require.alias("segmentio-analytics.js-integrations/lib/keen-io.js", "analytics/d
 require.alias("segmentio-analytics.js-integrations/lib/kissmetrics.js", "analytics/deps/integrations/lib/kissmetrics.js");
 require.alias("segmentio-analytics.js-integrations/lib/mixpanel.js", "analytics/deps/integrations/lib/mixpanel.js");
 require.alias("segmentio-analytics.js-integrations/index.js", "integrations/index.js");
+require.alias("avetisk-defaults/index.js", "segmentio-analytics.js-integrations/deps/defaults/index.js");
+
 require.alias("component-clone/index.js", "segmentio-analytics.js-integrations/deps/clone/index.js");
 require.alias("component-type/index.js", "component-clone/deps/type/index.js");
 
@@ -5812,6 +8174,8 @@ require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js")
 
 require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
 
+require.alias("ianstormtaylor-is-empty/index.js", "segmentio-analytics.js-integrations/deps/is-empty/index.js");
+
 require.alias("segmentio-alias/index.js", "segmentio-analytics.js-integrations/deps/alias/index.js");
 require.alias("component-clone/index.js", "segmentio-alias/deps/clone/index.js");
 require.alias("component-type/index.js", "component-clone/deps/type/index.js");
@@ -5820,6 +8184,7 @@ require.alias("component-type/index.js", "segmentio-alias/deps/type/index.js");
 
 require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integrations/deps/integration/lib/index.js");
 require.alias("segmentio-analytics.js-integration/lib/protos.js", "segmentio-analytics.js-integrations/deps/integration/lib/protos.js");
+require.alias("segmentio-analytics.js-integration/lib/events.js", "segmentio-analytics.js-integrations/deps/integration/lib/events.js");
 require.alias("segmentio-analytics.js-integration/lib/statics.js", "segmentio-analytics.js-integrations/deps/integration/lib/statics.js");
 require.alias("segmentio-analytics.js-integration/lib/index.js", "segmentio-analytics.js-integrations/deps/integration/index.js");
 require.alias("avetisk-defaults/index.js", "segmentio-analytics.js-integration/deps/defaults/index.js");
@@ -5840,6 +8205,10 @@ require.alias("component-type/index.js", "segmentio-bind-all/deps/type/index.js"
 
 require.alias("ianstormtaylor-callback/index.js", "segmentio-analytics.js-integration/deps/callback/index.js");
 require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
+
+require.alias("ianstormtaylor-to-no-case/index.js", "segmentio-analytics.js-integration/deps/to-no-case/index.js");
+
+require.alias("component-type/index.js", "segmentio-analytics.js-integration/deps/type/index.js");
 
 require.alias("segmentio-after/index.js", "segmentio-analytics.js-integration/deps/after/index.js");
 
@@ -5864,6 +8233,105 @@ require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-emp
 
 require.alias("segmentio-extend/index.js", "segmentio-analytics.js-integrations/deps/extend/index.js");
 
+require.alias("segmentio-facade/lib/index.js", "segmentio-analytics.js-integrations/deps/facade/lib/index.js");
+require.alias("segmentio-facade/lib/alias.js", "segmentio-analytics.js-integrations/deps/facade/lib/alias.js");
+require.alias("segmentio-facade/lib/facade.js", "segmentio-analytics.js-integrations/deps/facade/lib/facade.js");
+require.alias("segmentio-facade/lib/group.js", "segmentio-analytics.js-integrations/deps/facade/lib/group.js");
+require.alias("segmentio-facade/lib/page.js", "segmentio-analytics.js-integrations/deps/facade/lib/page.js");
+require.alias("segmentio-facade/lib/identify.js", "segmentio-analytics.js-integrations/deps/facade/lib/identify.js");
+require.alias("segmentio-facade/lib/is-enabled.js", "segmentio-analytics.js-integrations/deps/facade/lib/is-enabled.js");
+require.alias("segmentio-facade/lib/track.js", "segmentio-analytics.js-integrations/deps/facade/lib/track.js");
+require.alias("segmentio-facade/lib/index.js", "segmentio-analytics.js-integrations/deps/facade/index.js");
+require.alias("camshaft-require-component/index.js", "segmentio-facade/deps/require-component/index.js");
+
+require.alias("segmentio-isodate-traverse/index.js", "segmentio-facade/deps/isodate-traverse/index.js");
+require.alias("component-each/index.js", "segmentio-isodate-traverse/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "segmentio-isodate-traverse/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-isodate-traverse/deps/isodate/index.js");
+
+require.alias("component-clone/index.js", "segmentio-facade/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-inherit/index.js", "segmentio-facade/deps/inherit/index.js");
+
+require.alias("component-trim/index.js", "segmentio-facade/deps/trim/index.js");
+
+require.alias("segmentio-is-email/index.js", "segmentio-facade/deps/is-email/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "segmentio-facade/deps/new-date/lib/index.js");
+require.alias("segmentio-new-date/lib/milliseconds.js", "segmentio-facade/deps/new-date/lib/milliseconds.js");
+require.alias("segmentio-new-date/lib/seconds.js", "segmentio-facade/deps/new-date/lib/seconds.js");
+require.alias("segmentio-new-date/lib/index.js", "segmentio-facade/deps/new-date/index.js");
+require.alias("ianstormtaylor-is/index.js", "segmentio-new-date/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-new-date/deps/isodate/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "segmentio-new-date/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-facade/deps/obj-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-facade/deps/obj-case/index.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/lib/index.js");
+require.alias("ianstormtaylor-case/lib/cases.js", "segmentio-obj-case/deps/case/lib/cases.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/index.js");
+require.alias("ianstormtaylor-to-camel-case/index.js", "ianstormtaylor-case/deps/to-camel-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-camel-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-constant-case/index.js", "ianstormtaylor-case/deps/to-constant-case/index.js");
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-to-constant-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-dot-case/index.js", "ianstormtaylor-case/deps/to-dot-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-dot-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-pascal-case/index.js", "ianstormtaylor-case/deps/to-pascal-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-pascal-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-sentence-case/index.js", "ianstormtaylor-case/deps/to-sentence-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-sentence-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-slug-case/index.js", "ianstormtaylor-case/deps/to-slug-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-slug-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-title-case/index.js", "ianstormtaylor-case/deps/to-title-case/index.js");
+require.alias("component-escape-regexp/index.js", "ianstormtaylor-to-title-case/deps/escape-regexp/index.js");
+
+require.alias("ianstormtaylor-map/index.js", "ianstormtaylor-to-title-case/deps/map/index.js");
+require.alias("component-each/index.js", "ianstormtaylor-map/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-title-case-minors/index.js", "ianstormtaylor-to-title-case/deps/title-case-minors/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-to-title-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-case/lib/index.js", "ianstormtaylor-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-obj-case/index.js");
+require.alias("segmentio-facade/lib/index.js", "segmentio-facade/index.js");
 require.alias("segmentio-global-queue/index.js", "segmentio-analytics.js-integrations/deps/global-queue/index.js");
 
 require.alias("segmentio-is-email/index.js", "segmentio-analytics.js-integrations/deps/is-email/index.js");
@@ -5873,15 +8341,24 @@ require.alias("segmentio-load-date/index.js", "segmentio-analytics.js-integratio
 require.alias("segmentio-load-script/index.js", "segmentio-analytics.js-integrations/deps/load-script/index.js");
 require.alias("component-type/index.js", "segmentio-load-script/deps/type/index.js");
 
+require.alias("segmentio-script-onload/index.js", "segmentio-analytics.js-integrations/deps/script-onload/index.js");
+require.alias("segmentio-script-onload/index.js", "segmentio-analytics.js-integrations/deps/script-onload/index.js");
+require.alias("segmentio-script-onload/index.js", "segmentio-script-onload/index.js");
 require.alias("segmentio-on-body/index.js", "segmentio-analytics.js-integrations/deps/on-body/index.js");
 require.alias("component-each/index.js", "segmentio-on-body/deps/each/index.js");
 require.alias("component-type/index.js", "component-each/deps/type/index.js");
 
 require.alias("segmentio-on-error/index.js", "segmentio-analytics.js-integrations/deps/on-error/index.js");
 
+require.alias("segmentio-to-iso-string/index.js", "segmentio-analytics.js-integrations/deps/to-iso-string/index.js");
+
 require.alias("segmentio-to-unix-timestamp/index.js", "segmentio-analytics.js-integrations/deps/to-unix-timestamp/index.js");
 
 require.alias("segmentio-use-https/index.js", "segmentio-analytics.js-integrations/deps/use-https/index.js");
+
+require.alias("segmentio-when/index.js", "segmentio-analytics.js-integrations/deps/when/index.js");
+require.alias("ianstormtaylor-callback/index.js", "segmentio-when/deps/callback/index.js");
+require.alias("timoxley-next-tick/index.js", "ianstormtaylor-callback/deps/next-tick/index.js");
 
 require.alias("timoxley-next-tick/index.js", "segmentio-analytics.js-integrations/deps/next-tick/index.js");
 
@@ -5894,12 +8371,187 @@ require.alias("component-indexof/index.js", "component-emitter/deps/indexof/inde
 require.alias("visionmedia-debug/index.js", "segmentio-analytics.js-integrations/deps/debug/index.js");
 require.alias("visionmedia-debug/debug.js", "segmentio-analytics.js-integrations/deps/debug/debug.js");
 
+require.alias("segmentio-load-pixel/index.js", "segmentio-analytics.js-integrations/deps/load-pixel/index.js");
+require.alias("segmentio-load-pixel/index.js", "segmentio-analytics.js-integrations/deps/load-pixel/index.js");
+require.alias("component-querystring/index.js", "segmentio-load-pixel/deps/querystring/index.js");
+require.alias("component-trim/index.js", "component-querystring/deps/trim/index.js");
+
+require.alias("component-type/index.js", "component-querystring/deps/type/index.js");
+
+require.alias("segmentio-substitute/index.js", "segmentio-load-pixel/deps/substitute/index.js");
+require.alias("segmentio-substitute/index.js", "segmentio-load-pixel/deps/substitute/index.js");
+require.alias("segmentio-substitute/index.js", "segmentio-substitute/index.js");
+require.alias("segmentio-load-pixel/index.js", "segmentio-load-pixel/index.js");
+require.alias("segmentio-replace-document-write/index.js", "segmentio-analytics.js-integrations/deps/replace-document-write/index.js");
+require.alias("segmentio-replace-document-write/index.js", "segmentio-analytics.js-integrations/deps/replace-document-write/index.js");
+require.alias("component-domify/index.js", "segmentio-replace-document-write/deps/domify/index.js");
+
+require.alias("segmentio-replace-document-write/index.js", "segmentio-replace-document-write/index.js");
+require.alias("component-indexof/index.js", "segmentio-analytics.js-integrations/deps/indexof/index.js");
+
+require.alias("component-object/index.js", "segmentio-analytics.js-integrations/deps/object/index.js");
+
+require.alias("segmentio-obj-case/index.js", "segmentio-analytics.js-integrations/deps/obj-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-analytics.js-integrations/deps/obj-case/index.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/lib/index.js");
+require.alias("ianstormtaylor-case/lib/cases.js", "segmentio-obj-case/deps/case/lib/cases.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/index.js");
+require.alias("ianstormtaylor-to-camel-case/index.js", "ianstormtaylor-case/deps/to-camel-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-camel-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-constant-case/index.js", "ianstormtaylor-case/deps/to-constant-case/index.js");
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-to-constant-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-dot-case/index.js", "ianstormtaylor-case/deps/to-dot-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-dot-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-pascal-case/index.js", "ianstormtaylor-case/deps/to-pascal-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-pascal-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-sentence-case/index.js", "ianstormtaylor-case/deps/to-sentence-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-sentence-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-slug-case/index.js", "ianstormtaylor-case/deps/to-slug-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-slug-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-title-case/index.js", "ianstormtaylor-case/deps/to-title-case/index.js");
+require.alias("component-escape-regexp/index.js", "ianstormtaylor-to-title-case/deps/escape-regexp/index.js");
+
+require.alias("ianstormtaylor-map/index.js", "ianstormtaylor-to-title-case/deps/map/index.js");
+require.alias("component-each/index.js", "ianstormtaylor-map/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-title-case-minors/index.js", "ianstormtaylor-to-title-case/deps/title-case-minors/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-to-title-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-case/lib/index.js", "ianstormtaylor-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-obj-case/index.js");
 require.alias("segmentio-canonical/index.js", "analytics/deps/canonical/index.js");
 require.alias("segmentio-canonical/index.js", "canonical/index.js");
 
 require.alias("segmentio-extend/index.js", "analytics/deps/extend/index.js");
 require.alias("segmentio-extend/index.js", "extend/index.js");
 
+require.alias("segmentio-facade/lib/index.js", "analytics/deps/facade/lib/index.js");
+require.alias("segmentio-facade/lib/alias.js", "analytics/deps/facade/lib/alias.js");
+require.alias("segmentio-facade/lib/facade.js", "analytics/deps/facade/lib/facade.js");
+require.alias("segmentio-facade/lib/group.js", "analytics/deps/facade/lib/group.js");
+require.alias("segmentio-facade/lib/page.js", "analytics/deps/facade/lib/page.js");
+require.alias("segmentio-facade/lib/identify.js", "analytics/deps/facade/lib/identify.js");
+require.alias("segmentio-facade/lib/is-enabled.js", "analytics/deps/facade/lib/is-enabled.js");
+require.alias("segmentio-facade/lib/track.js", "analytics/deps/facade/lib/track.js");
+require.alias("segmentio-facade/lib/index.js", "analytics/deps/facade/index.js");
+require.alias("segmentio-facade/lib/index.js", "facade/index.js");
+require.alias("camshaft-require-component/index.js", "segmentio-facade/deps/require-component/index.js");
+
+require.alias("segmentio-isodate-traverse/index.js", "segmentio-facade/deps/isodate-traverse/index.js");
+require.alias("component-each/index.js", "segmentio-isodate-traverse/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-is/index.js", "segmentio-isodate-traverse/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-isodate-traverse/deps/isodate/index.js");
+
+require.alias("component-clone/index.js", "segmentio-facade/deps/clone/index.js");
+require.alias("component-type/index.js", "component-clone/deps/type/index.js");
+
+require.alias("component-inherit/index.js", "segmentio-facade/deps/inherit/index.js");
+
+require.alias("component-trim/index.js", "segmentio-facade/deps/trim/index.js");
+
+require.alias("segmentio-is-email/index.js", "segmentio-facade/deps/is-email/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "segmentio-facade/deps/new-date/lib/index.js");
+require.alias("segmentio-new-date/lib/milliseconds.js", "segmentio-facade/deps/new-date/lib/milliseconds.js");
+require.alias("segmentio-new-date/lib/seconds.js", "segmentio-facade/deps/new-date/lib/seconds.js");
+require.alias("segmentio-new-date/lib/index.js", "segmentio-facade/deps/new-date/index.js");
+require.alias("ianstormtaylor-is/index.js", "segmentio-new-date/deps/is/index.js");
+require.alias("component-type/index.js", "ianstormtaylor-is/deps/type/index.js");
+
+require.alias("ianstormtaylor-is-empty/index.js", "ianstormtaylor-is/deps/is-empty/index.js");
+
+require.alias("segmentio-isodate/index.js", "segmentio-new-date/deps/isodate/index.js");
+
+require.alias("segmentio-new-date/lib/index.js", "segmentio-new-date/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-facade/deps/obj-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-facade/deps/obj-case/index.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/lib/index.js");
+require.alias("ianstormtaylor-case/lib/cases.js", "segmentio-obj-case/deps/case/lib/cases.js");
+require.alias("ianstormtaylor-case/lib/index.js", "segmentio-obj-case/deps/case/index.js");
+require.alias("ianstormtaylor-to-camel-case/index.js", "ianstormtaylor-case/deps/to-camel-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-camel-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-constant-case/index.js", "ianstormtaylor-case/deps/to-constant-case/index.js");
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-to-constant-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-dot-case/index.js", "ianstormtaylor-case/deps/to-dot-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-dot-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-pascal-case/index.js", "ianstormtaylor-case/deps/to-pascal-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-pascal-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-sentence-case/index.js", "ianstormtaylor-case/deps/to-sentence-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-sentence-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-slug-case/index.js", "ianstormtaylor-case/deps/to-slug-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-slug-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-snake-case/index.js", "ianstormtaylor-case/deps/to-snake-case/index.js");
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-to-snake-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-space-case/index.js", "ianstormtaylor-case/deps/to-space-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-space-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-to-title-case/index.js", "ianstormtaylor-case/deps/to-title-case/index.js");
+require.alias("component-escape-regexp/index.js", "ianstormtaylor-to-title-case/deps/escape-regexp/index.js");
+
+require.alias("ianstormtaylor-map/index.js", "ianstormtaylor-to-title-case/deps/map/index.js");
+require.alias("component-each/index.js", "ianstormtaylor-map/deps/each/index.js");
+require.alias("component-type/index.js", "component-each/deps/type/index.js");
+
+require.alias("ianstormtaylor-title-case-minors/index.js", "ianstormtaylor-to-title-case/deps/title-case-minors/index.js");
+
+require.alias("ianstormtaylor-to-capital-case/index.js", "ianstormtaylor-to-title-case/deps/to-capital-case/index.js");
+require.alias("ianstormtaylor-to-no-case/index.js", "ianstormtaylor-to-capital-case/deps/to-no-case/index.js");
+
+require.alias("ianstormtaylor-case/lib/index.js", "ianstormtaylor-case/index.js");
+require.alias("segmentio-obj-case/index.js", "segmentio-obj-case/index.js");
+require.alias("segmentio-facade/lib/index.js", "segmentio-facade/index.js");
 require.alias("segmentio-is-email/index.js", "analytics/deps/is-email/index.js");
 require.alias("segmentio-is-email/index.js", "is-email/index.js");
 
@@ -5908,9 +8560,6 @@ require.alias("segmentio-is-meta/index.js", "is-meta/index.js");
 
 require.alias("segmentio-isodate-traverse/index.js", "analytics/deps/isodate-traverse/index.js");
 require.alias("segmentio-isodate-traverse/index.js", "isodate-traverse/index.js");
-require.alias("component-clone/index.js", "segmentio-isodate-traverse/deps/clone/index.js");
-require.alias("component-type/index.js", "component-clone/deps/type/index.js");
-
 require.alias("component-each/index.js", "segmentio-isodate-traverse/deps/each/index.js");
 require.alias("component-type/index.js", "component-each/deps/type/index.js");
 
@@ -5948,17 +8597,17 @@ require.alias("segmentio-top-domain/index.js", "top-domain/index.js");
 require.alias("component-url/index.js", "segmentio-top-domain/deps/url/index.js");
 
 require.alias("segmentio-top-domain/index.js", "segmentio-top-domain/index.js");
-require.alias("yields-prevent/index.js", "analytics/deps/prevent/index.js");
-require.alias("yields-prevent/index.js", "prevent/index.js");
-
 require.alias("visionmedia-debug/index.js", "analytics/deps/debug/index.js");
 require.alias("visionmedia-debug/debug.js", "analytics/deps/debug/debug.js");
 require.alias("visionmedia-debug/index.js", "debug/index.js");
 
+require.alias("yields-prevent/index.js", "analytics/deps/prevent/index.js");
+require.alias("yields-prevent/index.js", "prevent/index.js");
+
 require.alias("analytics/lib/index.js", "analytics/index.js");if (typeof exports == "object") {
   module.exports = require("analytics");
 } else if (typeof define == "function" && define.amd) {
-  define('analytics', function(){ return require("analytics"); });
+  define([], function(){ return require("analytics"); });
 } else {
   this["analytics"] = require("analytics");
 }})();

@@ -1,3 +1,254 @@
+
+1.3.30 / 2014-05-07 
+==================
+
+ * upgrade integrations to 0.6.1 for google analytics custom dimensions and metrics
+
+1.3.28 / 2014-04-29 
+==================
+
+ * upgrade integrations to 0.5.10 for navilytics fix and mixpanel fix
+ * component: upgrade to 0.19.6 and add githubusercontent to remotes
+
+1.3.26 / 2014-04-17 
+==================
+
+ * upgrade integrations to 0.5.8
+
+1.3.25 / 2014-04-16 
+==================
+
+ * upgrade integrations to 0.5.6
+
+1.3.24 / 2014-04-15 
+==================
+
+ * move analytics.js-integration to dev deps
+
+1.3.23 / 2014-04-14 
+==================
+
+ * upgrade integrations to 0.5.5
+ * update querystring to 1.3.0
+
+1.3.22 / 2014-04-11 
+==================
+
+ * upgrade integrations to 0.5.4
+
+1.3.21 / 2014-04-10 
+==================
+
+ * add "invoke" event
+
+1.3.20 / 2014-04-07 
+==================
+
+ * upgrade integrations to 0.5.3
+
+1.3.19 / 2014-04-05
+==================
+
+ * upgrade querystring to 1.2.0
+
+1.3.18 / 2014-04-05
+==================
+
+ * upgrade integrations to 0.5.1
+
+1.3.17 / 2014-04-04
+==================
+
+ * upgrade integrations to 0.5.0
+ * fix: add .search to .url when url is pulled from canonical tag
+ * tests: upgrade gravy to 0.2.0
+
+1.3.16 / 2014-04-01
+==================
+
+ * upgrade integrations to 0.4.14
+
+1.3.15 / 2014-03-26
+==================
+
+ * upgrade integrations to 0.4.13
+
+1.3.14 / 2014-03-26
+==================
+
+ * upgrade integrations to 0.4.12
+
+1.3.13 / 2014-03-25
+==================
+
+ * upgrade integrations to 0.4.11
+
+1.3.12 / 2014-03-19
+==================
+
+ * upgrade integrations to 0.4.10
+
+1.3.11 / 2014-03-14
+===================
+
+ * upgrade integrations to 0.4.9
+
+1.3.10 / 2014-03-14
+===================
+
+ * upgrade integrations to 0.4.8
+
+1.3.9 / 2014-03-14
+==================
+
+ * upgrade integrations to 0.4.7
+
+1.3.8 / 2014-03-13
+==================
+
+ * upgrade integrations to 0.4.6
+
+1.3.7 / 2014-03-06
+==================
+
+ * upgrade integrations to 0.4.5
+ * upgrade facade to 0.2.11
+
+1.3.6 / 2014-03-05
+==================
+
+ * upgrade integrations to 0.4.4
+
+1.3.4 / 2014-02-26
+==================
+
+ * update integrations to 0.4.2
+
+1.3.3 / 2014-02-18
+==================
+
+ * upgrade analytics.js-integrations to 0.4.1
+ * dont reset ids and traits
+
+1.3.2 / 2014-02-07
+==================
+
+ * upgrade analytics.js-integrations to 0.4.0
+ * upgrade analytics.js-integration to 0.1.7
+ * upgrade facade to 0.2.7
+ * fix page url default to check canonical and remove hash
+
+1.3.1 / 2014-01-30
+==================
+
+ * upgrade isodate-traverse to `0.3.0`
+ * upgrade facade to `0.2.4`
+ * upgrade analytics.js-integrations to `0.3.10`
+
+1.3.0 / 2014-01-23
+==================
+
+ * update analytics.js-integrations to 0.3.9
+
+1.2.9 / 2014-01-18
+==================
+
+* update `analytics.js-integrations` to `0.3.8`
+* expose `require()`
+
+1.2.8 / 2014-01-15
+==================
+
+* update `analytics.js-integrations` to `0.3.7`
+* upgrade `facade` to `0.2.3`
+
+1.2.7 / 2014-01-10
+==================
+
+ * update `analytics.js-integrations` to `0.3.6`
+
+1.2.6 - January 3, 2014
+-----------------------
+* upgrade `component(1)` for json support
+
+1.2.5 - January 3, 2014
+-----------------------
+* upgrade `analytics.js-integrations` to `0.3.5`
+* upgrade `facade` to `0.2.1`
+
+1.2.4 - January 2, 2014
+-------------------------
+* upgrade `analytics.js-integrations` to `0.3.4`
+
+1.2.3 - December 18, 2013
+-------------------------
+* fix `facade` dependency
+
+1.2.2 - December 18, 2013
+-------------------------
+* upgrade `analytics.js-integrations` to `0.3.2`
+
+1.2.1 - December 16, 2013
+-------------------------
+* add #push, fixes #253
+
+1.2.0 - December 13, 2013
+-------------------------
+* add [`facade`](https://github.com/segmentio/facade)
+
+1.1.9 - December 11, 2013
+-------------------------
+* upgrade `analytics.js-integrations` to `0.2.16`
+* add `search` to page property defaults
+
+1.1.8 - December 11, 2013
+------------------------
+* upgrade `analytics.js-integrations` to `0.2.15`
+* add [WebEngage](http://webengage.com)
+* heap: fallback to user id as handle
+
+1.1.7 - December 4, 2013
+------------------------
+* upgrade `analytics.js-integrations` to `0.2.13`
+
+1.1.6 - December 2, 2013
+------------------------
+* update `analytics.js-integrations` to `0.2.12`
+* add `entity`
+* change `user` to inherit from `entity`
+* change `group` to inherit from `entity`
+
+1.1.5 - November 26, 2013
+-------------------------
+* update `analytics.js-integration` to `0.1.5`
+* update `analytics.js-integrations` to `0.2.11`
+
+1.1.4 - November 25, 2013
+-------------------------
+* fix `page` method properties overload
+
+1.1.3 - November 21, 2013
+-------------------------
+* update `analytics.js-integrations` to `0.2.10`
+
+1.1.2 - November 21, 2013
+-------------------------
+* update `analytics.js-integrations` to `0.2.9`
+
+1.1.1 - November 20, 2013
+-------------------------
+* update `analytics.js-integrations` to `0.2.8`
+
+1.1.0 - November 20, 2013
+-------------------------
+* add `name` and `category` defaults to `page` method calls
+* update `analytics.js-integrations` to `0.2.7`
+
+1.0.9 - November 15, 2013
+-------------------------
+* update `analytics.js-integrations` to `0.2.6`
+* update dependencies
+
 1.0.8 - November 14, 2013
 -------------------------
 * update `analytics.js-integrations` to `0.2.5`
