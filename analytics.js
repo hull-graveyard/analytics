@@ -4577,7 +4577,8 @@ Mixpanel.prototype.identify = function (identify) {
  */
 
 var specialPropertiesAliases = {
-  'referrer': '$referrer'
+  'referrer': '$referrer',
+  'referring_domain': '$referring_domain'
 };
 
 /**
