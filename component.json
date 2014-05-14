@@ -2,7 +2,7 @@
   "name": "analytics",
   "repo": "hull/analytics",
   "description": "The hassle-free way to integrate analytics into any web application. Mirrored build version for segmentio/analytics.js for usage with Bower.",
-  "version": "1.3.30",
+  "version": "1.3.30-hull",
   "keywords": [
     "analytics",
     "analytics.js",
