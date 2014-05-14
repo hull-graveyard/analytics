@@ -4572,6 +4572,13 @@ Mixpanel.prototype.identify = function (identify) {
   if (this.options.people) window.mixpanel.people.set(traits);
 };
 
+/**
+ * Maps user properties into service-specific properties
+ */
+
+var specialPropertiesAliases = {
+  'referrer': '$referrer'
+};
 
 /**
  * Track.
@@ -4586,7 +4593,7 @@ Mixpanel.prototype.track = function (track) {
   var increments = this.options.increments;
   var increment = track.event().toLowerCase();
   var people = this.options.people;
-  var props = track.properties();
+  var props = track.properties(specialPropertiesAliases);
   var revenue = track.revenue();
 
   if (people && ~indexof(increments, increment)) {
