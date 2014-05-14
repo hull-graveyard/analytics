@@ -1664,21 +1664,21 @@ exports.track = function(track){};
 
 /**
  * Get events that match `str`.
- * 
+ *
  * Examples:
- * 
+ *
  *    { my_event: 'a4991b88' }
  *    .track('My Event');
  *    // => ["a4991b88"]
  *    .track('whatever');
  *    // => []
- * 
+ *
  *    [{ key: 'my event', value: '9b5eb1fa' }]
  *    .track('my_event');
  *    // => ["9b5eb1fa"]
  *    .track('whatever');
  *    // => []
- * 
+ *
  * @param {String} str
  * @return {Array}
  * @api public
@@ -1806,7 +1806,7 @@ exports._wrapInitialize = function () {
         self.emit('ready');
       });
     }
-    
+
     return ret;
   };
 
@@ -1859,7 +1859,7 @@ exports._wrapPage = function () {
     if (this._assumesPageview && !this._initialized) {
       return this.initialize.apply(this, arguments);
     }
-    
+
     return page.apply(this, arguments);
   };
 };
@@ -3504,7 +3504,7 @@ GA.prototype.initialize = function () {
   // send global id
   if (opts.sendUserId && user.id()) {
     window.ga('set', '&uid', user.id());
-  }  
+  }
 
   // anonymize after initializing, otherwise a warning is shown
   // in google analytics debugger
@@ -3849,15 +3849,15 @@ function formatValue (value) {
 
 /**
  * Map google's custom dimensions & metrics with `obj`.
- * 
+ *
  * Example:
- * 
+ *
  *      metrics({ revenue: 1.9 }, { { metrics : { metric8: 'revenue' } });
  *      // => { metric8: 1.9 }
- * 
+ *
  *      metrics({ revenue: 1.9 }, {});
  *      // => {}
- * 
+ *
  * @param {Object} obj
  * @param {Object} data
  * @return {Object|null}
@@ -4624,7 +4624,7 @@ Mixpanel.prototype.alias = function (alias) {
 
 /**
  * Lowercase the given `arr`.
- * 
+ *
  * @param {Array} arr
  * @return {Array}
  * @api private
@@ -6750,14 +6750,14 @@ require.register("yields-prevent/index.js", function(exports, require, module){
 
 /**
  * prevent default on the given `e`.
- * 
+ *
  * examples:
- * 
+ *
  *      anchor.onclick = prevent;
  *      anchor.onclick = function(e){
  *        if (something) return prevent(e);
  *      };
- * 
+ *
  * @param {Event} e
  */
 
@@ -8607,7 +8607,7 @@ require.alias("yields-prevent/index.js", "prevent/index.js");
 require.alias("analytics/lib/index.js", "analytics/index.js");if (typeof exports == "object") {
   module.exports = require("analytics");
 } else if (typeof define == "function" && define.amd) {
-  define([], function(){ return require("analytics"); });
+  define("analytics", [], function(){ return require("analytics"); });
 } else {
   this["analytics"] = require("analytics");
 }})();
