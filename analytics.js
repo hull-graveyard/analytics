@@ -1810,7 +1810,6 @@ exports._wrapInitialize = function () {
     return ret;
   };
 
-  if (this._assumesPageview) this.initialize = after(2, this.initialize);
 };
 
 
